@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IMAC - Gestão Semanal (Offline)</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body { -webkit-tap-highlight-color: transparent; background-color: #0c0a09; color: #f5f5f4; } /* stone-950 */
+        
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1c1917; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #44403c; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ca8a04; }
+
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.1); }
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.8); }
+        
+        /* Configurações de Impressão (PDF) */
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background-color: white; color: black; font-family: sans-serif; }
+            .bg-stone-900, .bg-stone-950, .bg-white { background-color: white !important; border: none !important; color: black !important; }
+            .text-stone-100, .text-stone-200, .text-stone-300, .text-stone-400, .text-stone-500 { color: black !important; }
+            .border-stone-800, .border-stone-700 { border-color: #ccc !important; }
+            .shadow-lg, .shadow-sm { box-shadow: none !important; }
+            
+            /* Ajustes específicos para gráficos na impressão */
+            svg { break-inside: avoid; }
+            .page-break { page-break-before: always; }
+            
+            /* Forçar impressão de background para barras coloridas se o navegador permitir */
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+    </style>
+</head>
+<body class="bg-stone-950 text-stone-100 font-sans">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- DADOS PADRÃO ---
+        const STATIC_DB_PERGUNTAS = [
+            { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "Manipuladores com fardamento completo e conservado?" },
+            { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "Higiene pessoal adequada (unhas curtas, barba feita)?" },
+            { id: "def_3", setor: "ESTOQUE", grupo: "GERAL", pergunta: "Setor limpo (piso/parede/teto/portas)?" },
+            { id: "def_4", setor: "ESTOQUE", grupo: "GERAL", pergunta: "Produtos organizados e identificados (PVPS)?" },
+            { id: "def_5", setor: "ESTOQUE", grupo: "CÂMARA", pergunta: "Temperaturas adequadas e registradas?" },
+            { id: "def_6", setor: "PRE_PESAGEM", grupo: "MANIPULADOR", pergunta: "Uso correto de EPIs?" },
+            { id: "def_7", setor: "PRE_PESAGEM", grupo: "GERAL", pergunta: "Bancadas limpas e organizadas?" },
+            { id: "def_8", setor: "PRE_PESAGEM", grupo: "CLIMA", pergunta: "Temperatura entre 17º e 20ºC?" },
+            { id: "def_9", setor: "CONFEITARIA", grupo: "MANIPULADOR", pergunta: "Fardamento limpo e completo?" },
+            { id: "def_10", setor: "CONFEITARIA", grupo: "EQUIPAMENTOS", pergunta: "Fornos e batedeiras higienizados?" },
+            { id: "def_11", setor: "CONFEITARIA", grupo: "GERAL", pergunta: "Piso livre de resíduos e gordura?" },
+            { id: "def_12", setor: "SALGADO", grupo: "MANIPULADOR", pergunta: "Higiene das mãos realizada frequentemente?" },
+            { id: "def_13", setor: "SALGADO", grupo: "PRODUÇÃO", pergunta: "Fluxo organizado sem cruzamento?" },
+            { id: "def_14", setor: "PÃO DE QUEIJO", grupo: "GERAL", pergunta: "Utensílios específicos organizados?" },
+            { id: "def_15", setor: "PÃO DE QUEIJO", grupo: "EQUIPAMENTOS", pergunta: "Freezers limpos e sem gelo excessivo?" },
+            { id: "def_16", setor: "PRODUÇÃO", grupo: "GERAL", pergunta: "Mesas e bancadas íntegras?" },
+            { id: "def_17", setor: "PRODUÇÃO", grupo: "GERAL", pergunta: "Ausência de objetos pessoais na área?" },
+            { id: "def_18", setor: "EMBALADORA", grupo: "EQUIPAMENTOS", pergunta: "Máquina seladora limpa?" },
+            { id: "def_19", setor: "EMBALADORA", grupo: "PROCESSO", pergunta: "Etiquetas com data e validade corretas?" },
+            { id: "def_20", setor: "EXPEDIÇÃO", grupo: "GERAL", pergunta: "Área de despacho limpa?" },
+            { id: "def_21", setor: "EXPEDIÇÃO", grupo: "GERAL", pergunta: "Caixas organizadas por rota/cliente?" },
+            { id: "def_22", setor: "PLATAFORMA", grupo: "GERAL", pergunta: "Corredor livre e limpo?" },
+            { id: "def_23", setor: "PLATAFORMA", grupo: "CAIXAS", pergunta: "Caixas plásticas higienizadas?" },
+            { id: "def_24", setor: "BANHEIRO FEMININO", grupo: "GERAL", pergunta: "Sanitários limpos e com descarga funcionando?" },
+            { id: "def_25", setor: "BANHEIRO FEMININO", grupo: "INSUMOS", pergunta: "Papel, sabonete e lixeira com pedal disponíveis?" },
+            { id: "def_26", setor: "BANHEIRO MASCULINO", grupo: "GERAL", pergunta: "Sanitários limpos e com descarga funcionando?" },
+            { id: "def_27", setor: "BANHEIRO MASCULINO", grupo: "INSUMOS", pergunta: "Papel, sabonete e lixeira com pedal disponíveis?" },
+            { id: "def_28", setor: "REFEITORIO-COZINHA", grupo: "GERAL", pergunta: "Mesas e cadeiras limpas?" },
+            { id: "def_29", setor: "REFEITORIO-COZINHA", grupo: "COZINHA", pergunta: "Pias e bancadas higienizadas?" },
+            { id: "def_30", setor: "CENTRO TÉCNICO", grupo: "GERAL", pergunta: "Organização geral do ambiente?" },
+            { id: "def_31", setor: "CENTRO TÉCNICO", grupo: "GERAL", pergunta: "Equipamentos de medição calibrados/limpos?" },
+            { id: "def_32", setor: "TODOS", grupo: "ESTRUTURAL", pergunta: "Piso/paredes/teto livres de frestas e buracos?" },
+            { id: "def_33", setor: "TODOS", grupo: "HIGIENE", pergunta: "Lixeiras com tampa, pedal e limpas?" },
+            { id: "def_34", setor: "TODOS", grupo: "PRAGAS", pergunta: "Ausência de vetores e pragas?" },
+            { id: "def_35", setor: "TODOS", grupo: "DOCUMENTAÇÃO", pergunta: "Planilhas de controle preenchidas?" }
+        ];
+
+        // --- ÍCONES ---
+        const Icons = {
+            Check: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>,
+            List: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>,
+            Gear: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>,
+            Plus: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+            Trash: () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
+            Edit: () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+            Download: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
+            Upload: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
+            Database: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
+            Image: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>,
+            Search: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
+            Chart: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>,
+            Alert: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+            Calendar: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>,
+            Camera: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
+            Pen: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>,
+            Printer: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>,
+            FileText: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        };
+
+        const getWeekID = () => {
+            const now = new Date();
+            const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const year = d.getUTCFullYear();
+            const weekNo = Math.ceil(( ( (d - new Date(Date.UTC(year,0,1))) / 86400000) + 1)/7);
+            return `${year}-W${weekNo}`;
+        };
+
+        const getWeekRange = () => {
+            const curr = new Date();
+            const first = curr.getDate() - curr.getDay();
+            const last = first + 6;
+            const firstday = new Date(curr.setDate(first)).toLocaleDateString('pt-BR');
+            const lastday = new Date(curr.setDate(last)).toLocaleDateString('pt-BR');
+            return `${firstday} até ${lastday}`;
+        }
+
+        // --- SISTEMA DE ARMAZENAMENTO LOCAL ---
+        const Storage = {
+            KEY: 'imac_offline_data',
+            get: () => {
+                const data = localStorage.getItem(Storage.KEY);
+                return data ? JSON.parse(data) : { questions: [], inspections: [], lastBackup: null, logo: null };
+            },
+            set: (data) => {
+                localStorage.setItem(Storage.KEY, JSON.stringify(data));
+            },
+            reset: () => {
+                const initialData = { 
+                    questions: STATIC_DB_PERGUNTAS, 
+                    inspections: [],
+                    lastBackup: null,
+                    logo: null
+                };
+                Storage.set(initialData);
+                return initialData;
+            }
+        };
+
+        // --- COMPONENTE PIE CHART ---
+        const PieChart = ({ data }) => {
+            const total = data.reduce((acc, curr) => acc + curr.value, 0);
+            if (total === 0) return <div className="text-center text-xs text-stone-600 h-32 flex items-center justify-center">Sem dados</div>;
+            let cumulativePercent = 0;
+            const getCoordinatesForPercent = (percent) => {
+                const x = Math.cos(2 * Math.PI * percent);
+                const y = Math.sin(2 * Math.PI * percent);
+                return [x, y];
+            }
+            return (
+                <div className="flex flex-row items-center justify-center gap-4">
+                    <div className="w-32 h-32 shrink-0 relative">
+                        <svg viewBox="-1 -1 2 2" className="transform -rotate-90">
+                            {data.map((slice, i) => {
+                                if (slice.value === 0) return null;
+                                const startPercent = cumulativePercent;
+                                const slicePercent = slice.value / total;
+                                cumulativePercent += slicePercent;
+                                const endPercent = cumulativePercent;
+                                const [startX, startY] = getCoordinatesForPercent(startPercent);
+                                const [endX, endY] = getCoordinatesForPercent(endPercent);
+                                const largeArcFlag = slicePercent > 0.5 ? 1 : 0;
+                                const pathData = `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} L 0 0`;
+                                return <path key={i} d={pathData} fill={slice.color} stroke="#0c0a09" strokeWidth="0.02" />;
+                            })}
+                        </svg>
+                    </div>
+                    <div className="flex-1 space-y-1">
+                        {data.map((slice, i) => (
+                            slice.value > 0 && (
+                                <div key={i} className="flex items-center text-xs">
+                                    <div className="w-2 h-2 rounded-full mr-2" style={{backgroundColor: slice.color}}></div>
+                                    <span className="text-stone-400 flex-1">{slice.label}</span>
+                                    <span className="text-stone-200 font-bold ml-1">{Math.round((slice.value / total) * 100)}% ({slice.value})</span>
+                                </div>
+                            )
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENTE ASSINATURA ---
+        const SignaturePad = ({ onSave }) => {
+            const canvasRef = useRef(null);
+            const [isDrawing, setIsDrawing] = useState(false);
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "#000"; 
+                canvas.width = canvas.offsetWidth;
+                canvas.height = canvas.offsetHeight;
+            }, []);
+
+            const startDrawing = (e) => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.getBoundingClientRect();
+                const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+                const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                setIsDrawing(true);
+            };
+
+            const draw = (e) => {
+                if (!isDrawing) return;
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.getBoundingClientRect();
+                const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+                const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            };
+
+            const stopDrawing = () => {
+                if (isDrawing) {
+                    setIsDrawing(false);
+                    onSave(canvasRef.current.toDataURL());
+                }
+            };
+
+            return (
+                <canvas
+                    ref={canvasRef}
+                    className="w-full h-32 bg-white rounded-lg border border-stone-600 touch-none"
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                />
+            );
+        };
+
+        function App() {
+            const [view, setView] = useState('loading');
+            const [selectedSetor, setSelectedSetor] = useState('');
+            const [responsavel, setResponsavel] = useState('');
+            const [data, setData] = useState({ questions: [], inspections: [], lastBackup: null, logo: null });
+            
+            const [answers, setAnswers] = useState({});
+            const [obs, setObs] = useState({});
+            const [evidences, setEvidences] = useState({});
+            const [signature, setSignature] = useState(null);
+            
+            const [reportInspection, setReportInspection] = useState(null);
+            const [actionPlan, setActionPlan] = useState('');
+
+            const [settingsTab, setSettingsTab] = useState('questions');
+            const [analyticsTab, setAnalyticsTab] = useState('weekly'); 
+            const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+            const [editingQ, setEditingQ] = useState(null);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [adminFilterSetor, setAdminFilterSetor] = useState('TODOS');
+            const [searchTerm, setSearchTerm] = useState('');
+
+            useEffect(() => {
+                let localData = Storage.get();
+                if (localData.questions.length === 0) localData = Storage.reset();
+                setData(localData);
+                setView('dashboard');
+            }, []);
+
+            useEffect(() => {
+                if (view !== 'loading') Storage.set(data);
+            }, [data, view]);
+
+            const weekId = getWeekID();
+            
+            const allSetors = useMemo(() => {
+                const s = new Set(data.questions.map(p => p.setor).filter(x => x !== 'TODOS'));
+                return Array.from(s).sort();
+            }, [data.questions]);
+
+            const inspectionsThisWeek = useMemo(() => {
+                return data.inspections.filter(i => i.weekId === weekId);
+            }, [data.inspections, weekId]);
+
+            const setoresConcluidos = useMemo(() => new Set(inspectionsThisWeek.map(i => i.setor)), [inspectionsThisWeek]);
+
+            const progress = useMemo(() => {
+                const total = allSetors.length;
+                const done = setoresConcluidos.size;
+                const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+                return { total, done, pct };
+            }, [allSetors, setoresConcluidos]);
+
+            const currentQuestions = useMemo(() => {
+                if (!selectedSetor) return [];
+                return data.questions.filter(p => p.setor === selectedSetor || p.setor === 'TODOS');
+            }, [selectedSetor, data.questions]);
+
+            const scoreAtual = useMemo(() => {
+                if (currentQuestions.length === 0) return 0;
+                let total = 0;
+                let conformes = 0;
+                currentQuestions.forEach(q => {
+                    if (answers[q.id]) { total++; if (answers[q.id] === 'C') conformes++; }
+                });
+                return total === 0 ? 0 : Math.round((conformes / total) * 100);
+            }, [answers, currentQuestions]);
+
+            const handleStartInspection = (setor) => {
+                if (!responsavel) { alert("Informe o responsável."); return; }
+                setSelectedSetor(setor);
+                setAnswers({});
+                setObs({});
+                setEvidences({});
+                setSignature(null);
+                setView('inspection');
+            };
+
+            const handlePhotoUpload = (qId, e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 800; 
+                        const scaleSize = MAX_WIDTH / img.width;
+                        canvas.width = MAX_WIDTH;
+                        canvas.height = img.height * scaleSize;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7); 
+                        setEvidences(prev => ({...prev, [qId]: compressedBase64}));
+                    }
+                    img.src = event.target.result;
+                }
+                reader.readAsDataURL(file);
+            };
+
+            const handleSaveInspection = () => {
+                const pendentes = currentQuestions.filter(q => !answers[q.id]);
+                if (pendentes.length > 0 && !confirm(`Existem ${pendentes.length} perguntas sem resposta. Salvar?`)) return;
+                if (!signature && !confirm("Salvar sem assinatura do responsável?")) return;
+
+                const newInspection = {
+                    id: Date.now().toString(),
+                    setor: selectedSetor,
+                    responsavel: responsavel,
+                    data: new Date().toISOString(),
+                    weekId: getWeekID(),
+                    score: scoreAtual,
+                    respostas: answers,
+                    observacoes: obs,
+                    evidencias: evidences,
+                    assinatura: signature,
+                    status: 'Concluído'
+                };
+
+                const otherInspections = data.inspections.filter(i => !(i.weekId === weekId && i.setor === selectedSetor));
+                setData(prev => ({...prev, inspections: [...otherInspections, newInspection]}));
+                setReportInspection(newInspection);
+                setView('report');
+            };
+
+            const handleSaveQuestion = (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const newQ = {
+                    id: editingQ?.id || Date.now().toString(),
+                    setor: formData.get('setor').toUpperCase(),
+                    grupo: formData.get('grupo').toUpperCase(),
+                    pergunta: formData.get('pergunta')
+                };
+                let newQuestions = editingQ ? data.questions.map(q => q.id === editingQ.id ? newQ : q) : [...data.questions, newQ];
+                setData(prev => ({ ...prev, questions: newQuestions }));
+                setIsModalOpen(false);
+                setEditingQ(null);
+            };
+
+            const handleDeleteQuestion = (id) => {
+                if (!confirm("Excluir pergunta?")) return;
+                setData(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== id) }));
+            };
+
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file || file.size > 2000000) { alert("Imagem muito grande ou inválida."); return; }
+                const reader = new FileReader();
+                reader.onloadend = () => setData(prev => ({ ...prev, logo: reader.result }));
+                reader.readAsDataURL(file);
+            };
+
+            const handleDownloadBackup = () => {
+                const backupData = { ...data, lastBackup: new Date().toISOString() };
+                setData(backupData);
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+                const anchor = document.createElement('a');
+                anchor.setAttribute("href", dataStr);
+                anchor.setAttribute("download", `backup_imac_${new Date().toISOString().split('T')[0]}.json`);
+                document.body.appendChild(anchor);
+                anchor.click();
+                anchor.remove();
+            };
+
+            const handleRestoreBackup = (e) => {
+                const reader = new FileReader();
+                reader.readAsText(e.target.files[0], "UTF-8");
+                reader.onload = (evt) => {
+                    try {
+                        const parsed = JSON.parse(evt.target.result);
+                        if (parsed.questions && Array.isArray(parsed.inspections)) {
+                            if(confirm("Restaurar backup? Isso substituirá os dados atuais.")) {
+                                setData(parsed);
+                                alert("Sucesso!");
+                            }
+                        } else alert("Arquivo inválido.");
+                    } catch (err) { alert("Erro ao ler arquivo."); }
+                };
+            };
+
+            // --- ANALYTICS ---
+            const analytics = useMemo(() => {
+                let filteredInspections = [];
+                if (analyticsTab === 'weekly') {
+                    filteredInspections = data.inspections.filter(i => i.weekId === weekId);
+                } else {
+                    filteredInspections = data.inspections.filter(i => i.data.startsWith(selectedMonth));
+                }
+
+                const totalScore = filteredInspections.reduce((acc, curr) => acc + curr.score, 0);
+                const avgScore = filteredInspections.length ? Math.round(totalScore / filteredInspections.length) : 0;
+
+                // RANKING - Ordenação Decrescente
+                let ranking = [];
+                if (analyticsTab === 'weekly') {
+                    ranking = [...filteredInspections].sort((a, b) => b.score - a.score);
+                } else {
+                    const grouped = {};
+                    filteredInspections.forEach(i => {
+                        if(!grouped[i.setor]) grouped[i.setor] = { total: 0, count: 0 };
+                        grouped[i.setor].total += i.score;
+                        grouped[i.setor].count += 1;
+                    });
+                    ranking = Object.entries(grouped).map(([setor, val]) => ({
+                        setor, 
+                        score: Math.round(val.total / val.count),
+                        count: val.count
+                    })).sort((a, b) => b.score - a.score);
+                }
+
+                const ncBySector = {};
+                const ncByCategory = {};
+                const inspectionsByAuditor = {};
+                const auditorScores = {}; 
+
+                filteredInspections.forEach(insp => {
+                    inspectionsByAuditor[insp.responsavel] = (inspectionsByAuditor[insp.responsavel] || 0) + 1;
+                    if (!auditorScores[insp.responsavel]) auditorScores[insp.responsavel] = { total: 0, count: 0 };
+                    auditorScores[insp.responsavel].total += insp.score;
+                    auditorScores[insp.responsavel].count += 1;
+
+                    Object.entries(insp.respostas).forEach(([qId, resp]) => {
+                        if (resp === 'NC') {
+                            ncBySector[insp.setor] = (ncBySector[insp.setor] || 0) + 1;
+                            const question = data.questions.find(q => q.id === qId);
+                            if (question) ncByCategory[question.grupo] = (ncByCategory[question.grupo] || 0) + 1;
+                        }
+                    });
+                });
+
+                const colors = ['#eab308', '#a8a29e', '#f59e0b', '#78716c', '#ef4444', '#84cc16', '#3b82f6', '#d946ef'];
+                
+                // ORDENAÇÃO DECRESCENTE PARA GRÁFICOS
+                const pieSector = Object.entries(ncBySector)
+                    .map(([label, value], i) => ({ label, value, color: colors[i % colors.length] }))
+                    .sort((a, b) => b.value - a.value); // Decrescente
+
+                const pieCategory = Object.entries(ncByCategory)
+                    .map(([label, value], i) => ({ label, value, color: colors[i % colors.length] }))
+                    .sort((a, b) => b.value - a.value); // Decrescente
+
+                const pieAuditor = Object.entries(inspectionsByAuditor)
+                    .map(([label, value], i) => ({ label, value, color: colors[i % colors.length] }))
+                    .sort((a, b) => b.value - a.value); // Decrescente
+                
+                const auditorPerformance = Object.entries(auditorScores).map(([name, val]) => ({
+                    name,
+                    avg: Math.round(val.total / val.count),
+                    count: val.count
+                })).sort((a, b) => b.avg - a.avg);
+
+                // TEXTO DESCRITIVO AUTOMÁTICO
+                const totalInspections = filteredInspections.length;
+                const bestSector = ranking.length > 0 ? ranking[0].setor : "Nenhum";
+                const worstSector = ranking.length > 0 ? ranking[ranking.length - 1].setor : "Nenhum";
+                const mainIssue = pieCategory.length > 0 ? pieCategory[0].label : "Nenhum";
+
+                const summaryText = `Neste período (${analyticsTab === 'weekly' ? 'Semana' : 'Mês'}), foram realizadas ${totalInspections} inspeções, resultando em uma média global de ${avgScore}%. O setor com melhor desempenho foi "${bestSector}", enquanto "${worstSector}" apresentou os menores índices. A principal categoria de não conformidades foi "${mainIssue}".`;
+
+                return { avgScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText };
+            }, [data.inspections, data.questions, weekId, analyticsTab, selectedMonth]);
+
+            
+            if (view === 'loading') return <div className="flex h-screen bg-stone-950 items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-600"></div></div>;
+
+            // VIEW: REPORT (PDF INDIVIDUAL)
+            if (view === 'report' && reportInspection) {
+                const reportQuestions = data.questions.filter(q => q.setor === reportInspection.setor || q.setor === 'TODOS');
+                return (
+                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto">
+                        <div className="flex justify-between items-center mb-6 no-print">
+                            <button onClick={() => setView('dashboard')} className="bg-stone-800 text-white px-4 py-2 rounded">Voltar</button>
+                            <button onClick={() => window.print()} className="bg-yellow-600 text-black font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.List /> Imprimir / PDF</button>
+                        </div>
+                        <div className="border border-gray-300 p-8">
+                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
+                                <div><h1 className="text-2xl font-bold uppercase">Relatório de Inspeção</h1><p className="text-sm text-gray-600">Gestão de Qualidade IMAC</p></div>
+                                {data.logo && <img src={data.logo} className="h-12 object-contain" />}
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                                <div><span className="font-bold">Setor:</span> {reportInspection.setor}</div>
+                                <div><span className="font-bold">Data:</span> {new Date(reportInspection.data).toLocaleString()}</div>
+                                <div><span className="font-bold">Auditor:</span> {reportInspection.responsavel}</div>
+                                <div><span className="font-bold">Semana:</span> {reportInspection.weekId}</div>
+                            </div>
+                            <div className="mb-8 p-4 bg-gray-100 rounded text-center"><span className="text-lg font-bold">Nota Final: </span><span className={`text-2xl font-black ${reportInspection.score >= 80 ? 'text-green-700' : 'text-red-700'}`}>{reportInspection.score}%</span></div>
+                            <div className="mb-8"><h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Não Conformidades</h3>{reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').length === 0 ? (<p className="text-sm italic text-gray-500">Nenhuma não conformidade registrada.</p>) : (<div className="space-y-4">{reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').map(q => (<div key={q.id} className="border border-red-100 bg-red-50 p-3 rounded page-break"><div className="flex justify-between"><span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded">{q.grupo}</span></div><p className="font-bold text-sm mt-2">{q.pergunta}</p><p className="text-sm mt-1 text-red-800"><span className="font-bold">Obs:</span> {reportInspection.observacoes[q.id] || '-'}</p>{reportInspection.evidencias && reportInspection.evidencias[q.id] && (<div className="mt-2"><p className="text-xs font-bold mb-1">Evidência Fotográfica:</p><img src={reportInspection.evidencias[q.id]} className="h-32 object-contain border border-gray-300 bg-white" /></div>)}</div>))}</div>)}</div>
+                            <div className="mt-12 flex justify-between items-end"><div className="text-center w-1/3"><p className="font-bold text-sm mb-8">{reportInspection.responsavel}</p><div className="border-t border-black pt-1 text-xs">Auditor Responsável</div></div><div className="text-center w-1/3">{reportInspection.assinatura ? (<img src={reportInspection.assinatura} className="h-16 mx-auto mb-2" />) : <div className="h-16"></div>}<div className="border-t border-black pt-1 text-xs">Responsável pelo Setor (Acompanhante)</div></div></div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // VIEW: MANAGEMENT REPORT (NOVO RELATÓRIO GERENCIAL)
+            if (view === 'management_report') {
+                return (
+                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto">
+                        <div className="flex justify-between items-center mb-6 no-print">
+                            <button onClick={() => setView('analytics')} className="bg-stone-800 text-white px-4 py-2 rounded">Voltar</button>
+                            <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.Printer /> Imprimir Relatório</button>
+                        </div>
+
+                        <div className="bg-white p-8 border border-gray-300 shadow-sm print:shadow-none print:border-none">
+                            {/* Header */}
+                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8">
+                                <div>
+                                    <h1 className="text-3xl font-bold uppercase tracking-tight">Relatório Gerencial</h1>
+                                    <p className="text-sm text-gray-500 uppercase tracking-widest mt-1">Indicadores de Qualidade - IMAC</p>
+                                </div>
+                                {data.logo && <img src={data.logo} className="h-16 object-contain" />}
+                            </div>
+
+                            {/* Info */}
+                            <div className="flex justify-between mb-8 text-sm bg-gray-50 p-4 rounded border border-gray-200">
+                                <div><strong>Período:</strong> {analyticsTab === 'weekly' ? 'Semanal (' + getWeekRange() + ')' : 'Mensal (' + selectedMonth + ')'}</div>
+                                <div><strong>Emissão:</strong> {new Date().toLocaleDateString()}</div>
+                            </div>
+
+                            {/* Resumo Executivo */}
+                            <div className="mb-8">
+                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700">1. Resumo Executivo</h2>
+                                <p className="text-justify leading-relaxed text-gray-800">{analytics.summaryText}</p>
+                            </div>
+
+                            {/* KPIs */}
+                            <div className="grid grid-cols-3 gap-6 mb-8 text-center">
+                                <div className="p-4 border rounded bg-gray-50">
+                                    <div className="text-3xl font-black text-gray-800">{analytics.avgScore}%</div>
+                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1">Média Geral</div>
+                                </div>
+                                <div className="p-4 border rounded bg-gray-50">
+                                    <div className="text-3xl font-black text-gray-800">{analytics.ranking.length}</div>
+                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1">Inspeções</div>
+                                </div>
+                                <div className="p-4 border rounded bg-gray-50">
+                                    <div className="text-3xl font-black text-gray-800">{analytics.pieCategory.length > 0 ? analytics.pieCategory[0].value : 0}</div>
+                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1">Maior Incidência (NC)</div>
+                                </div>
+                            </div>
+
+                            {/* Destaques */}
+                            <div className="grid grid-cols-2 gap-8 mb-8">
+                                <div>
+                                    <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-green-700">Top 3 - Melhores Setores</h2>
+                                    <ul className="text-sm space-y-2">
+                                        {analytics.ranking.slice(0, 3).map((r, i) => (
+                                            <li key={i} className="flex justify-between border-b border-gray-100 pb-1">
+                                                <span>{i+1}. {r.setor}</span>
+                                                <span className="font-bold">{r.score}%</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-red-700">Atenção - Menores Índices</h2>
+                                    <ul className="text-sm space-y-2">
+                                        {[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (
+                                            <li key={i} className="flex justify-between border-b border-gray-100 pb-1">
+                                                <span>{i+1}. {r.setor}</span>
+                                                <span className="font-bold text-red-600">{r.score}%</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Análise Gráfica */}
+                            <div className="mb-8 page-break">
+                                <h2 className="text-lg font-bold border-b border-gray-300 mb-4 pb-1 uppercase text-gray-700">3. Análise de Ocorrências</h2>
+                                <div className="grid grid-cols-2 gap-8">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Categoria</h4>
+                                        <div className="border p-4 rounded flex justify-center bg-gray-50">
+                                            <PieChart data={analytics.pieCategory} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Setor</h4>
+                                        <div className="border p-4 rounded flex justify-center bg-gray-50">
+                                            <PieChart data={analytics.pieSector} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Plano de Ação */}
+                            <div className="mb-12">
+                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700">4. Plano de Ação / Observações da Gerência</h2>
+                                <textarea 
+                                    className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" 
+                                    placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..."
+                                    value={actionPlan}
+                                    onChange={e => setActionPlan(e.target.value)}
+                                />
+                                <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[10rem]">
+                                    {actionPlan || "Nenhuma observação registrada."}
+                                </div>
+                            </div>
+
+                            {/* Assinatura Gerência */}
+                            <div className="mt-16 flex justify-end">
+                                <div className="text-center w-1/3">
+                                    <div className="border-t border-black pt-2 font-bold text-sm">Gerência de Qualidade</div>
+                                    <div className="text-xs text-gray-500">{new Date().toLocaleDateString()}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // VIEW: DASHBOARD
+            if (view === 'dashboard') {
+                return (
+                    <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in">
+                        <header className="bg-gradient-to-b from-yellow-900 to-stone-900 text-stone-100 p-6 rounded-b-3xl shadow-lg mb-6 relative border-b border-yellow-900/30">
+                            <div className="absolute top-6 right-6 flex gap-2">
+                                <button onClick={() => setView('analytics')} className="p-2 bg-stone-950/30 rounded-full hover:bg-stone-950/50 text-yellow-500 transition-colors" title="Indicadores"><Icons.Chart /></button>
+                                <button onClick={() => setView('settings')} className="p-2 bg-stone-950/30 rounded-full hover:bg-stone-950/50 text-stone-400 hover:text-yellow-500 transition-colors" title="Configurações"><Icons.Gear /></button>
+                            </div>
+                            <div className="mb-4">
+                                {data.logo ? <img src={data.logo} alt="Logo" className="h-16 object-contain mb-2 drop-shadow-md" /> : <h1 className="text-2xl font-bold text-yellow-500">Gestão IMAC</h1>}
+                                <p className="text-stone-400 text-sm">Controle de Qualidade (Offline)</p>
+                            </div>
+                            <div className="bg-stone-800/60 backdrop-blur-md p-4 rounded-xl border border-yellow-900/40">
+                                <div className="flex justify-between items-end mb-2">
+                                    <span className="text-yellow-100/80 text-sm font-medium">Progresso Semanal</span>
+                                    <span className="text-2xl font-bold text-yellow-400">{progress.pct}%</span>
+                                </div>
+                                <div className="w-full bg-stone-950/50 rounded-full h-3 mb-2"><div className="bg-yellow-500 h-3 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(234,179,8,0.5)]" style={{ width: `${progress.pct}%` }}></div></div>
+                                <p className="text-xs text-stone-400 text-right">{progress.done}/{progress.total} setores verificados</p>
+                            </div>
+                        </header>
+                        <main className="flex-1 px-6 pb-20">
+                            <div className="mb-6"><label className="block text-sm font-bold text-stone-400 mb-2">Responsável</label><input type="text" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} placeholder="Digite seu nome..." className="w-full p-3 rounded-xl bg-stone-900 border border-stone-800 text-stone-100 shadow-sm outline-none focus:ring-2 focus:ring-yellow-600 focus:border-transparent placeholder-stone-600 transition-all" /></div>
+                            <div className="space-y-3">
+                                {allSetors.length === 0 && <p className="text-center text-stone-500 py-4">Nenhum setor encontrado. Vá em configurações.</p>}
+                                {allSetors.map(setor => {
+                                    const isDone = setoresConcluidos.has(setor);
+                                    const insp = inspectionsThisWeek.find(i => i.setor === setor);
+                                    return (
+                                        <button key={setor} onClick={() => isDone ? (setReportInspection(insp), setView('report')) : handleStartInspection(setor)} className={`w-full p-4 rounded-xl flex items-center justify-between card-shadow transition-all active:scale-95 border ${isDone ? 'bg-stone-900 border-yellow-900/50' : 'bg-stone-900 border-stone-800 hover:border-stone-700'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isDone ? 'bg-yellow-900/30 text-yellow-500' : 'bg-stone-800 text-stone-500'}`}>{isDone ? <Icons.Check /> : <Icons.List />}</div>
+                                                <div className="text-left"><p className={`font-bold ${isDone ? 'text-yellow-100' : 'text-stone-300'}`}>{setor}</p>{isDone && <p className="text-xs text-yellow-600 font-medium">Nota: {insp.score}%</p>}</div>
+                                            </div>
+                                            {isDone ? <span className="text-xs bg-yellow-900/40 text-yellow-400 px-2 py-1 rounded font-bold border border-yellow-900/50">RELATÓRIO</span> : <span className="h-8 w-8 rounded-full bg-stone-800 text-stone-500 flex items-center justify-center hover:bg-stone-700 hover:text-yellow-500 transition-colors">→</span>}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </main>
+                    </div>
+                );
+            }
+
+            // VIEW: ANALYTICS
+            if (view === 'analytics') {
+                return (
+                    <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in text-stone-100">
+                        <header className="bg-stone-900 p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-800">
+                            <button onClick={() => setView('dashboard')} className="text-sm font-bold text-stone-400 hover:text-yellow-500 transition-colors">← Voltar</button>
+                            <h1 className="font-bold text-yellow-500">Indicadores</h1>
+                            <div className="w-10"></div>
+                        </header>
+
+                        {/* Sub-menu Tabs */}
+                        <div className="flex border-b border-stone-800 bg-stone-900/50 p-2 gap-2 sticky top-[60px] z-10">
+                            <button onClick={() => setAnalyticsTab('weekly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'weekly' ? 'bg-yellow-600 text-stone-950' : 'bg-stone-800 text-stone-400'}`}>Semanal</button>
+                            <button onClick={() => setAnalyticsTab('monthly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'monthly' ? 'bg-yellow-600 text-stone-950' : 'bg-stone-800 text-stone-400'}`}>Mensal</button>
+                        </div>
+
+                        {analyticsTab === 'monthly' && (
+                            <div className="px-6 pt-4">
+                                <label className="text-xs font-bold text-stone-500 uppercase flex items-center gap-2 mb-2"><Icons.Calendar /> Selecionar Mês</label>
+                                <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full p-2 bg-stone-900 border border-stone-700 rounded-lg text-stone-200 outline-none focus:border-yellow-600" />
+                            </div>
+                        )}
+
+                        <main className="flex-1 p-6 pb-24 space-y-8">
+                            
+                            {/* Botão para Relatório Gerencial */}
+                            <button onClick={() => setView('management_report')} className="w-full py-3 bg-yellow-600 text-stone-950 font-bold rounded-lg shadow-lg flex items-center justify-center gap-2 hover:bg-yellow-500 transition-all active:scale-95">
+                                <Icons.FileText /> Gerar Relatório Gerencial
+                            </button>
+
+                            {/* Score Geral */}
+                            <div className="bg-stone-900 rounded-xl p-6 border border-stone-800 text-center relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-700 via-yellow-500 to-yellow-700"></div>
+                                <h3 className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">{analyticsTab === 'weekly' ? 'Média Semanal' : 'Média Mensal'}</h3>
+                                <div className="flex justify-center items-end gap-2">
+                                    <span className={`text-5xl font-black ${analytics.avgScore >= 80 ? 'text-green-500' : analytics.avgScore >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>{analytics.avgScore}%</span>
+                                </div>
+                                <p className="text-[10px] text-stone-600 mt-2">Baseado em {analytics.ranking.length} registros</p>
+                            </div>
+
+                            {/* Desempenho por Auditor */}
+                            <div>
+                                <h3 className="text-sm font-bold text-stone-300 mb-4 flex items-center gap-2"><Icons.Check /> Média por Auditor</h3>
+                                <div className="bg-stone-900 rounded-xl border border-stone-800 overflow-hidden">
+                                    {analytics.auditorPerformance.length === 0 ? <div className="p-6 text-center text-stone-600 text-xs">Sem dados.</div> : (
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-stone-950/50 text-[10px] text-stone-500 uppercase border-b border-stone-800">
+                                                    <th className="p-3">Auditor</th>
+                                                    <th className="p-3 text-center">Qtd</th>
+                                                    <th className="p-3 text-right">Nota Média</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-sm text-stone-300">
+                                                {analytics.auditorPerformance.map((aud, index) => (
+                                                    <tr key={index} className="border-b border-stone-800 last:border-0 hover:bg-stone-800/50">
+                                                        <td className="p-3 font-medium">{aud.name}</td>
+                                                        <td className="p-3 text-center text-stone-500">{aud.count}</td>
+                                                        <td className={`p-3 text-right font-bold ${aud.avg >= 80 ? 'text-green-500' : 'text-red-500'}`}>{aud.avg}%</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Ranking */}
+                            <div>
+                                <h3 className="text-sm font-bold text-stone-300 mb-4 flex items-center gap-2"><Icons.Chart /> Ranking {analyticsTab === 'weekly' ? 'Semanal' : 'Mensal'}</h3>
+                                <div className="bg-stone-900 rounded-xl border border-stone-800 overflow-hidden">
+                                    {analytics.ranking.length === 0 ? <div className="p-6 text-center text-stone-600 text-xs">Sem dados.</div> : (
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-stone-950/50 text-[10px] text-stone-500 uppercase border-b border-stone-800">
+                                                    <th className="p-3">#</th>
+                                                    <th className="p-3">Setor</th>
+                                                    <th className="p-3 text-right">Nota Média</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-sm text-stone-300">
+                                                {analytics.ranking.map((insp, index) => (
+                                                    <tr key={insp.setor} className="border-b border-stone-800 last:border-0 hover:bg-stone-800/50">
+                                                        <td className="p-3 font-mono text-stone-500">{index + 1}</td>
+                                                        <td className="p-3 font-medium">{insp.setor}</td>
+                                                        <td className={`p-3 text-right font-bold ${insp.score >= 80 ? 'text-green-500' : 'text-red-500'}`}>{insp.score}%</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Gráficos de Pizza */}
+                            <div className="space-y-8">
+                                <div className="bg-stone-900 p-4 rounded-xl border border-stone-800">
+                                    <h3 className="text-xs font-bold text-stone-400 uppercase mb-4 text-center">Ocorrências (NC) por Setor</h3>
+                                    <PieChart data={analytics.pieSector} />
+                                </div>
+
+                                <div className="bg-stone-900 p-4 rounded-xl border border-stone-800">
+                                    <h3 className="text-xs font-bold text-stone-400 uppercase mb-4 text-center">Ocorrências (NC) por Categoria</h3>
+                                    <PieChart data={analytics.pieCategory} />
+                                </div>
+                            </div>
+
+                        </main>
+                    </div>
+                );
+            }
+
+            // VIEW: SETTINGS
+            if (view === 'settings') {
+                const filteredQuestions = data.questions.filter(q => {
+                    const matchSector = adminFilterSetor === 'TODOS' || q.setor === adminFilterSetor || q.setor === 'TODOS';
+                    const searchLower = searchTerm.toLowerCase();
+                    const matchSearch = searchTerm === '' || 
+                                        q.pergunta.toLowerCase().includes(searchLower) || 
+                                        q.grupo.toLowerCase().includes(searchLower) ||
+                                        q.setor.toLowerCase().includes(searchLower);
+                    return matchSector && matchSearch;
+                });
+
+                return (
+                    <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in text-stone-100">
+                        <header className="bg-stone-900 p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-800">
+                            <button onClick={() => setView('dashboard')} className="text-sm font-bold text-stone-400 hover:text-yellow-500 transition-colors">← Voltar</button>
+                            <h1 className="font-bold text-yellow-500">Configurações</h1>
+                            <div className="w-10"></div>
+                        </header>
+
+                        <div className="flex border-b border-stone-800 bg-stone-900/50 sticky top-[60px] z-10">
+                            <button onClick={() => setSettingsTab('questions')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'questions' ? 'border-yellow-600 text-yellow-500' : 'border-transparent text-stone-500 hover:text-stone-300'}`}>Perguntas</button>
+                            <button onClick={() => setSettingsTab('system')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'system' ? 'border-yellow-600 text-yellow-500' : 'border-transparent text-stone-500 hover:text-stone-300'}`}>Sistema</button>
+                        </div>
+
+                        <main className="flex-1 p-6 pb-24">
+                            {settingsTab === 'system' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="bg-stone-900 p-6 rounded-xl shadow-sm border border-stone-800">
+                                        <h2 className="font-bold text-stone-200 mb-4 flex items-center gap-2"><Icons.Image /> Identidade Visual</h2>
+                                        <label className="block cursor-pointer group">
+                                            <span className="text-xs font-bold text-stone-500 uppercase mb-2 block group-hover:text-yellow-500 transition-colors">Logo da Empresa</span>
+                                            <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                                            <div className={`mt-1 p-6 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all ${data.logo ? 'border-yellow-700/50 bg-stone-950' : 'border-stone-700 bg-stone-950 hover:bg-stone-800 hover:border-stone-600'}`}>
+                                                {data.logo ? (
+                                                    <div className="relative"><img src={data.logo} className="h-16 object-contain" /><div className="absolute -bottom-8 left-0 right-0 text-center text-[10px] text-yellow-600">Clique para alterar</div></div>
+                                                ) : (
+                                                    <div className="text-stone-500 flex flex-col items-center"><Icons.Upload /><span className="text-xs mt-2 font-medium">Clique para enviar logo</span></div>
+                                                )}
+                                            </div>
+                                        </label>
+                                    </div>
+                                    <div className="bg-stone-900 p-6 rounded-xl shadow-sm border border-stone-800">
+                                        <h2 className="font-bold text-stone-200 mb-4 flex items-center gap-2"><Icons.Database /> Backup e Restauração</h2>
+                                        <div className="mb-4 text-xs text-stone-400 bg-stone-950 p-3 rounded border border-stone-800"><p>Último Backup: <strong className="text-yellow-500">{data.lastBackup ? new Date(data.lastBackup).toLocaleString() : "Nunca realizado"}</strong></p></div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button onClick={handleDownloadBackup} className="flex flex-col items-center justify-center p-3 bg-stone-950 border border-stone-800 rounded-lg text-stone-300 hover:bg-stone-800 hover:text-yellow-400 transition-all active:scale-95"><Icons.Download /><span className="text-xs font-bold mt-2">Baixar</span></button>
+                                            <label className="flex flex-col items-center justify-center p-3 bg-stone-950 border border-stone-800 rounded-lg text-stone-300 hover:bg-stone-800 hover:text-green-400 transition-all cursor-pointer active:scale-95"><Icons.Upload /><span className="text-xs font-bold mt-2">Restaurar</span><input type="file" accept=".json" className="hidden" onChange={handleRestoreBackup} /></label>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {settingsTab === 'questions' && (
+                                <div className="space-y-4 animate-fade-in">
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-500"><Icons.Search /></div>
+                                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar pergunta, setor..." className="w-full pl-10 p-3 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 placeholder-stone-500 focus:border-yellow-600 focus:ring-1 focus:ring-yellow-600 outline-none transition-all" />
+                                    </div>
+                                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                        <button onClick={() => setAdminFilterSetor('TODOS')} className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-bold transition-colors ${adminFilterSetor === 'TODOS' ? 'bg-yellow-600 text-stone-950' : 'bg-stone-900 text-stone-400 border border-stone-700'}`}>Todos</button>
+                                        {allSetors.map(s => (
+                                            <button key={s} onClick={() => setAdminFilterSetor(s)} className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-bold transition-colors ${adminFilterSetor === s ? 'bg-yellow-600 text-stone-950' : 'bg-stone-900 text-stone-400 border border-stone-700'}`}>{s}</button>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs text-stone-500 px-1"><span>{filteredQuestions.length} perguntas encontradas</span></div>
+                                    <div className="space-y-3">
+                                        {filteredQuestions.map(q => (
+                                            <div key={q.id} className="bg-stone-900 p-4 rounded-xl shadow-sm border border-stone-800 flex justify-between items-start hover:border-yellow-900/50 transition-colors group">
+                                                <div className="flex-1 pr-3">
+                                                    <div className="flex gap-2 mb-2 flex-wrap">
+                                                        <span className="text-[10px] bg-stone-950 text-stone-400 px-2 py-0.5 rounded font-bold border border-stone-800">{q.setor}</span>
+                                                        <span className="text-[10px] bg-yellow-900/20 text-yellow-600 px-2 py-0.5 rounded font-bold border border-yellow-900/30">{q.grupo}</span>
+                                                    </div>
+                                                    <p className="text-sm text-stone-200 font-medium leading-snug">{q.pergunta}</p>
+                                                </div>
+                                                <div className="flex flex-col gap-2 opacity-100 sm:opacity-50 sm:group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => { setEditingQ(q); setIsModalOpen(true); }} className="bg-stone-800 text-stone-400 hover:text-yellow-500 hover:bg-stone-700 p-2 rounded-lg transition-colors"><Icons.Edit /></button>
+                                                    <button onClick={() => handleDeleteQuestion(q.id)} className="bg-stone-800 text-stone-400 hover:text-red-400 hover:bg-stone-700 p-2 rounded-lg transition-colors"><Icons.Trash /></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {filteredQuestions.length === 0 && <div className="text-center py-10 text-stone-600"><p>Nenhuma pergunta encontrada.</p></div>}
+                                    </div>
+                                </div>
+                            )}
+                        </main>
+                        {settingsTab === 'questions' && (
+                            <button onClick={() => { setEditingQ(null); setIsModalOpen(true); }} className="fixed bottom-6 right-6 bg-yellow-600 text-stone-950 h-14 w-14 rounded-full shadow-lg shadow-yellow-900/20 flex items-center justify-center hover:bg-yellow-500 hover:scale-105 transition-all z-20"><Icons.Plus /></button>
+                        )}
+                        {isModalOpen && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay backdrop-blur-sm">
+                                <div className="bg-stone-900 border border-stone-700 rounded-xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in duration-200">
+                                    <h2 className="text-lg font-bold mb-4 text-yellow-500">{editingQ ? 'Editar Pergunta' : 'Nova Pergunta'}</h2>
+                                    <form onSubmit={handleSaveQuestion} className="space-y-4">
+                                        <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Setor</label><input name="setor" defaultValue={editingQ?.setor || ''} list="setores-list" className="w-full p-3 bg-stone-950 border border-stone-700 rounded-lg text-sm text-stone-100 focus:border-yellow-600 outline-none" required placeholder="Ex: ESTOQUE" /><datalist id="setores-list">{allSetors.map(s => <option key={s} value={s} />)}</datalist></div>
+                                        <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Grupo/Categoria</label><input name="grupo" defaultValue={editingQ?.grupo || ''} className="w-full p-3 bg-stone-950 border border-stone-700 rounded-lg text-sm text-stone-100 focus:border-yellow-600 outline-none" required placeholder="Ex: LIMPEZA" /></div>
+                                        <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Pergunta</label><textarea name="pergunta" defaultValue={editingQ?.pergunta || ''} className="w-full p-3 bg-stone-950 border border-stone-700 rounded-lg text-sm text-stone-100 h-24 resize-none focus:border-yellow-600 outline-none" required placeholder="Digite a pergunta..." /></div>
+                                        <div className="flex gap-2 pt-2"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 border border-stone-700 rounded-lg text-stone-400 font-bold hover:bg-stone-800">Cancelar</button><button type="submit" className="flex-1 py-3 bg-yellow-600 text-stone-950 rounded-lg font-bold hover:bg-yellow-500">Salvar</button></div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            // VIEW: INSPECTION
+            if (view === 'inspection') {
+                return (
+                    <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in">
+                        <header className="sticky top-0 z-10 bg-stone-900 border-b border-stone-800 px-6 py-4 flex items-center justify-between shadow-md">
+                            <div><h2 className="text-lg font-bold text-stone-100">{selectedSetor}</h2><p className="text-xs text-stone-500">Resp: {responsavel}</p></div>
+                            <div className="text-right"><span className={`text-2xl font-black ${scoreAtual >= 80 ? 'text-green-500' : 'text-red-500'}`}>{scoreAtual}%</span></div>
+                        </header>
+                        <main className="flex-1 p-6 space-y-6 pb-24 overflow-y-auto">
+                            {currentQuestions.map((q, idx) => (
+                                <div key={q.id || idx} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="mb-2"><span className="text-[10px] font-bold text-yellow-600 bg-yellow-900/20 border border-yellow-900/30 px-2 py-1 rounded uppercase">{q.grupo}</span><p className="mt-2 text-stone-200 font-medium leading-snug">{q.pergunta}</p></div>
+                                    <div className="flex gap-2">
+                                        {['C', 'NC', 'NA'].map(opt => (
+                                            <button key={opt} onClick={() => setAnswers(p => ({...p, [q.id]: opt}))} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all shadow-lg ${answers[q.id] === opt ? (opt === 'C' ? 'bg-green-600 text-white shadow-green-900/40' : opt === 'NC' ? 'bg-red-600 text-white shadow-red-900/40' : 'bg-stone-600 text-white') : 'bg-stone-900 text-stone-500 hover:bg-stone-800'}`}>{opt}</button>
+                                        ))}
+                                    </div>
+                                    
+                                    {/* Campo NC Expandido */}
+                                    {answers[q.id] === 'NC' && (
+                                        <div className="mt-2 space-y-2 animate-fade-in">
+                                            <input type="text" placeholder="Descreva o problema..." value={obs[q.id] || ''} onChange={(e) => setObs(p => ({...p, [q.id]: e.target.value}))} className="w-full text-sm p-3 bg-red-900/10 border-red-900/30 rounded-lg text-red-200 focus:border-red-500 outline-none border placeholder-red-800/50" />
+                                            
+                                            <div className="flex items-center gap-2">
+                                                <label className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed cursor-pointer transition-colors ${evidences[q.id] ? 'border-green-500 text-green-400 bg-green-900/10' : 'border-stone-700 text-stone-500 hover:border-stone-500'}`}>
+                                                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handlePhotoUpload(q.id, e)} />
+                                                    <Icons.Camera />
+                                                    <span className="text-xs font-bold">{evidences[q.id] ? 'Foto Registrada' : 'Adicionar Foto'}</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+
+                            {/* Área de Assinatura */}
+                            <div className="mt-8 border-t border-stone-800 pt-6">
+                                <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura do Responsável</h3>
+                                <p className="text-xs text-stone-500 mb-2">Assine na área branca abaixo:</p>
+                                <SignaturePad onSave={setSignature} />
+                                {signature && <p className="text-xs text-green-500 mt-1 text-right">Assinatura capturada ✓</p>}
+                            </div>
+
+                        </main>
+                        <div className="fixed bottom-0 left-0 right-0 p-4 bg-stone-900 border-t border-stone-800 flex gap-3 max-w-md mx-auto">
+                            <button onClick={() => setView('dashboard')} className="px-6 py-3 rounded-xl border border-stone-700 font-bold text-stone-400 hover:bg-stone-800">Cancelar</button>
+                            <button onClick={handleSaveInspection} className="flex-1 bg-yellow-600 text-stone-950 rounded-xl font-bold shadow-lg shadow-yellow-900/20 hover:bg-yellow-500 transition-colors">Salvar Inspeção</button>
+                        </div>
+                    </div>
+                );
+            }
+            return null;
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
