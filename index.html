@@ -79,14 +79,10 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- DADOS PADRÃO ---
+        // --- DADOS PADRÃO (Mantido mínimo para inicialização) ---
         const STATIC_DB_PERGUNTAS = [
             { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "Manipuladores com fardamento completo e conservado?" },
-            { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "Higiene pessoal adequada (unhas curtas, barba feita)?" },
-            { id: "def_3", setor: "ESTOQUE", grupo: "GERAL", pergunta: "Setor limpo (piso/parede/teto/portas)?" },
-            { id: "def_4", setor: "ESTOQUE", grupo: "GERAL", pergunta: "Produtos organizados e identificados (PVPS)?" },
-            { id: "def_5", setor: "ESTOQUE", grupo: "CÂMARA", pergunta: "Temperaturas adequadas e registradas?" },
-            // ... (restante dos dados padrão mantidos para inicialização se necessário)
+            { id: "def_2", setor: "ESTOQUE", grupo: "GERAL", pergunta: "Setor limpo (piso/parede/teto/portas)?" }
         ];
 
         // --- ÍCONES ---
@@ -114,13 +110,15 @@
         };
 
         const getWeekID = (dateStr) => {
-            const now = dateStr ? new Date(dateStr) : new Date();
-            const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-            const dayNum = d.getUTCDay() || 7;
-            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-            const year = d.getUTCFullYear();
-            const weekNo = Math.ceil(( ( (d - new Date(Date.UTC(year,0,1))) / 86400000) + 1)/7);
-            return `${year}-W${weekNo}`;
+            try {
+                const now = dateStr ? new Date(dateStr) : new Date();
+                const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+                const dayNum = d.getUTCDay() || 7;
+                d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+                const year = d.getUTCFullYear();
+                const weekNo = Math.ceil(( ( (d - new Date(Date.UTC(year,0,1))) / 86400000) + 1)/7);
+                return `${year}-W${weekNo}`;
+            } catch (e) { return "INVALID-DATE"; }
         };
 
         const getWeekRange = () => {
@@ -136,8 +134,10 @@
         const Storage = {
             KEY: 'imac_offline_data',
             get: () => {
-                const data = localStorage.getItem(Storage.KEY);
-                return data ? JSON.parse(data) : { questions: [], inspections: [], lastBackup: null, logo: null };
+                try {
+                    const data = localStorage.getItem(Storage.KEY);
+                    return data ? JSON.parse(data) : { questions: [], inspections: [], lastBackup: null, logo: null };
+                } catch(e) { return { questions: [], inspections: [], lastBackup: null, logo: null }; }
             },
             set: (data) => {
                 localStorage.setItem(Storage.KEY, JSON.stringify(data));
@@ -154,7 +154,7 @@
             }
         };
 
-        // --- COMPONENTES AUXILIARES ---
+        // --- COMPONENTE PIE CHART ---
         const PieChart = ({ data }) => {
             const total = data.reduce((acc, curr) => acc + curr.value, 0);
             if (total === 0) return <div className="text-center text-xs text-stone-600 h-32 flex items-center justify-center">Sem dados</div>;
@@ -197,6 +197,7 @@
             );
         };
 
+        // --- COMPONENTE ASSINATURA ---
         const SignaturePad = ({ onSave, initialData }) => {
             const canvasRef = useRef(null);
             const [isDrawing, setIsDrawing] = useState(false);
@@ -472,39 +473,22 @@
                 reader.onload = (evt) => {
                     const bstr = evt.target.result;
                     const wb = XLSX.read(bstr, {type:'binary'});
-                    
                     let importedQuestions = [];
-                    
-                    // Keywords para identificar coluna de categoria
                     const keywords = ["LIMPEZA", "ESTRUTURAL", "ORGANIZAÇÃO", "AUTODISCIPLINA", "UTILIZAÇÃO", "MANIPULADOR", "DOCUMENTAÇÃO", "ILUMINAÇÃO", "PRAGAS", "CLIMATIZAÇÃO"];
 
                     wb.SheetNames.forEach(sheetName => {
-                        // Ignora planilhas de resumo/resultados
                         if(sheetName.toUpperCase().includes("RESULT") || sheetName.toUpperCase().includes("RECORR")) return;
-
                         const ws = wb.Sheets[sheetName];
                         const jsonData = XLSX.utils.sheet_to_json(ws, {header:1});
                         
-                        // Varre linhas
                         jsonData.forEach((row) => {
                             if(row.length < 2) return;
-                            
-                            // Tenta achar a pergunta e o grupo
-                            // Assumindo estrutura: Col A = Pergunta, Col B = Grupo OU Col A = Grupo, etc.
-                            // A lógica mais segura dado o CSV enviado é procurar a keyword na Coluna B (index 1)
-                            
                             let questionText = row[0];
                             let groupText = row[1];
-
                             if(!questionText || !groupText) return;
-                            
-                            // Limpeza básica
                             questionText = String(questionText).trim();
                             groupText = String(groupText).trim().toUpperCase();
-
-                            // Verifica se groupText é uma das categorias válidas
                             const isValidGroup = keywords.some(k => groupText.includes(k));
-
                             if(isValidGroup && questionText.length > 5 && !questionText.toUpperCase().includes("MÉDIA")) {
                                 importedQuestions.push({
                                     id: "imp_" + Date.now() + Math.random().toString(16).slice(2),
@@ -522,7 +506,7 @@
                             alert("Importação realizada com sucesso!");
                         }
                     } else {
-                        alert("Não foi possível identificar perguntas no formato esperado. Verifique se a Coluna A contém as perguntas e a Coluna B as categorias (Limpeza, Estrutural, etc).");
+                        alert("Não foi possível identificar perguntas no formato esperado.");
                     }
                 };
                 reader.readAsBinaryString(file);
@@ -597,16 +581,19 @@
             // --- ANALYTICS ---
             const analytics = useMemo(() => {
                 let filteredInspections = [];
+                // Proteção contra dados corrompidos
+                const safeInspections = Array.isArray(data.inspections) ? data.inspections.filter(i => i && i.data) : [];
+
                 if (analyticsTab === 'weekly') {
-                    filteredInspections = data.inspections.filter(i => i.weekId === weekId);
+                    filteredInspections = safeInspections.filter(i => i.weekId === weekId);
                 } else {
-                    filteredInspections = data.inspections.filter(i => i.data.startsWith(selectedMonth));
+                    filteredInspections = safeInspections.filter(i => i.data.startsWith(selectedMonth));
                 }
 
-                const totalScore = filteredInspections.reduce((acc, curr) => acc + curr.score, 0);
+                const totalScore = filteredInspections.reduce((acc, curr) => acc + (curr.score || 0), 0);
                 const avgScore = filteredInspections.length ? Math.round(totalScore / filteredInspections.length) : 0;
                 
-                const totalBonusScore = filteredInspections.reduce((acc, curr) => acc + (curr.bonusScore || curr.score), 0);
+                const totalBonusScore = filteredInspections.reduce((acc, curr) => acc + (curr.bonusScore || curr.score || 0), 0);
                 const avgBonusScore = filteredInspections.length ? Math.round(totalBonusScore / filteredInspections.length) : 0;
 
                 let ranking = [];
@@ -616,7 +603,7 @@
                     const grouped = {};
                     filteredInspections.forEach(i => {
                         if(!grouped[i.setor]) grouped[i.setor] = { total: 0, count: 0 };
-                        grouped[i.setor].total += i.score;
+                        grouped[i.setor].total += (i.score || 0);
                         grouped[i.setor].count += 1;
                     });
                     ranking = Object.entries(grouped).map(([setor, val]) => ({
@@ -634,16 +621,18 @@
                 filteredInspections.forEach(insp => {
                     inspectionsByAuditor[insp.responsavel] = (inspectionsByAuditor[insp.responsavel] || 0) + 1;
                     if (!auditorScores[insp.responsavel]) auditorScores[insp.responsavel] = { total: 0, count: 0 };
-                    auditorScores[insp.responsavel].total += insp.score;
+                    auditorScores[insp.responsavel].total += (insp.score || 0);
                     auditorScores[insp.responsavel].count += 1;
 
-                    Object.entries(insp.respostas).forEach(([qId, resp]) => {
-                        if (resp === 'NC') {
-                            ncBySector[insp.setor] = (ncBySector[insp.setor] || 0) + 1;
-                            const question = data.questions.find(q => q.id === qId);
-                            if (question) ncByCategory[question.grupo] = (ncByCategory[question.grupo] || 0) + 1;
-                        }
-                    });
+                    if(insp.respostas) {
+                        Object.entries(insp.respostas).forEach(([qId, resp]) => {
+                            if (resp === 'NC') {
+                                ncBySector[insp.setor] = (ncBySector[insp.setor] || 0) + 1;
+                                const question = data.questions.find(q => q.id === qId);
+                                if (question) ncByCategory[question.grupo] = (ncByCategory[question.grupo] || 0) + 1;
+                            }
+                        });
+                    }
                 });
 
                 const colors = ['#eab308', '#a8a29e', '#f59e0b', '#78716c', '#ef4444', '#84cc16', '#3b82f6', '#d946ef'];
@@ -887,6 +876,118 @@
                 );
             }
 
+            // VIEW: ANALYTICS
+            if (view === 'analytics') {
+                return (
+                    <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in text-stone-100">
+                        <header className="bg-stone-900 p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-800">
+                            <button onClick={() => setView('dashboard')} className="text-sm font-bold text-stone-400 hover:text-yellow-500 transition-colors">← Voltar</button>
+                            <h1 className="font-bold text-yellow-500">Indicadores</h1>
+                            <div className="w-10"></div>
+                        </header>
+
+                        {/* Sub-menu Tabs */}
+                        <div className="flex border-b border-stone-800 bg-stone-900/50 p-2 gap-2 sticky top-[60px] z-10">
+                            <button onClick={() => setAnalyticsTab('weekly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'weekly' ? 'bg-yellow-600 text-stone-950' : 'bg-stone-800 text-stone-400'}`}>Semanal</button>
+                            <button onClick={() => setAnalyticsTab('monthly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'monthly' ? 'bg-yellow-600 text-stone-950' : 'bg-stone-800 text-stone-400'}`}>Mensal</button>
+                        </div>
+
+                        {analyticsTab === 'monthly' && (
+                            <div className="px-6 pt-4">
+                                <label className="text-xs font-bold text-stone-500 uppercase flex items-center gap-2 mb-2"><Icons.Calendar /> Selecionar Mês</label>
+                                <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full p-2 bg-stone-900 border border-stone-700 rounded-lg text-stone-200 outline-none focus:border-yellow-600" />
+                            </div>
+                        )}
+
+                        <main className="flex-1 p-6 pb-24 space-y-8">
+                            
+                            {/* Botão para Relatório Gerencial */}
+                            <button onClick={() => setView('management_report')} className="w-full py-3 bg-yellow-600 text-stone-950 font-bold rounded-lg shadow-lg flex items-center justify-center gap-2 hover:bg-yellow-500 transition-all active:scale-95">
+                                <Icons.FileText /> Gerar Relatório Gerencial
+                            </button>
+
+                            {/* Score Geral */}
+                            <div className="bg-stone-900 rounded-xl p-6 border border-stone-800 text-center relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-700 via-yellow-500 to-yellow-700"></div>
+                                <h3 className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">{analyticsTab === 'weekly' ? 'Média Semanal' : 'Média Mensal'}</h3>
+                                <div className="flex justify-center items-end gap-2">
+                                    <span className={`text-5xl font-black ${analytics.avgScore >= 80 ? 'text-green-500' : analytics.avgScore >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>{analytics.avgScore}%</span>
+                                </div>
+                                <p className="text-[10px] text-stone-600 mt-2">Baseado em {analytics.ranking.length} registros</p>
+                            </div>
+
+                            {/* Desempenho por Auditor */}
+                            <div>
+                                <h3 className="text-sm font-bold text-stone-300 mb-4 flex items-center gap-2"><Icons.Check /> Média por Auditor</h3>
+                                <div className="bg-stone-900 rounded-xl border border-stone-800 overflow-hidden">
+                                    {analytics.auditorPerformance.length === 0 ? <div className="p-6 text-center text-stone-600 text-xs">Sem dados.</div> : (
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-stone-950/50 text-[10px] text-stone-500 uppercase border-b border-stone-800">
+                                                    <th className="p-3">Auditor</th>
+                                                    <th className="p-3 text-center">Qtd</th>
+                                                    <th className="p-3 text-right">Nota Média</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-sm text-stone-300">
+                                                {analytics.auditorPerformance.map((aud, index) => (
+                                                    <tr key={index} className="border-b border-stone-800 last:border-0 hover:bg-stone-800/50">
+                                                        <td className="p-3 font-medium">{aud.name}</td>
+                                                        <td className="p-3 text-center text-stone-500">{aud.count}</td>
+                                                        <td className={`p-3 text-right font-bold ${aud.avg >= 80 ? 'text-green-500' : 'text-red-500'}`}>{aud.avg}%</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Ranking */}
+                            <div>
+                                <h3 className="text-sm font-bold text-stone-300 mb-4 flex items-center gap-2"><Icons.Chart /> Ranking {analyticsTab === 'weekly' ? 'Semanal' : 'Mensal'}</h3>
+                                <div className="bg-stone-900 rounded-xl border border-stone-800 overflow-hidden">
+                                    {analytics.ranking.length === 0 ? <div className="p-6 text-center text-stone-600 text-xs">Sem dados.</div> : (
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-stone-950/50 text-[10px] text-stone-500 uppercase border-b border-stone-800">
+                                                    <th className="p-3">#</th>
+                                                    <th className="p-3">Setor</th>
+                                                    <th className="p-3 text-right">Nota Média</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-sm text-stone-300">
+                                                {analytics.ranking.map((insp, index) => (
+                                                    <tr key={insp.setor} className="border-b border-stone-800 last:border-0 hover:bg-stone-800/50">
+                                                        <td className="p-3 font-mono text-stone-500">{index + 1}</td>
+                                                        <td className="p-3 font-medium">{insp.setor}</td>
+                                                        <td className={`p-3 text-right font-bold ${insp.score >= 80 ? 'text-green-500' : 'text-red-500'}`}>{insp.score}%</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Gráficos de Pizza */}
+                            <div className="space-y-8">
+                                <div className="bg-stone-900 p-4 rounded-xl border border-stone-800">
+                                    <h3 className="text-xs font-bold text-stone-400 uppercase mb-4 text-center">Ocorrências (NC) por Setor</h3>
+                                    <PieChart data={analytics.pieSector} />
+                                </div>
+
+                                <div className="bg-stone-900 p-4 rounded-xl border border-stone-800">
+                                    <h3 className="text-xs font-bold text-stone-400 uppercase mb-4 text-center">Ocorrências (NC) por Categoria</h3>
+                                    <PieChart data={analytics.pieCategory} />
+                                </div>
+                            </div>
+
+                        </main>
+                    </div>
+                );
+            }
+
             // VIEW: SETTINGS
             if (view === 'settings') {
                 const filteredQuestions = data.questions.filter(q => {
@@ -899,6 +1000,7 @@
                     return matchSector && matchSearch;
                 });
 
+                // Ordenar auditorias por data decrescente
                 const sortedInspections = [...data.inspections].sort((a, b) => new Date(b.data) - new Date(a.data));
 
                 return (
