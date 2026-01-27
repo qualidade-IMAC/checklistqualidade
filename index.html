@@ -22,22 +22,55 @@
         .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.1); }
         .modal-overlay { background-color: rgba(0, 0, 0, 0.8); }
         
-        /* Configurações de Impressão (PDF) */
+        /* Configurações de Impressão (PDF) - OTIMIZADO PARA 1 PÁGINA */
         @media print {
+            @page { size: A4; margin: 5mm; } /* Margens mínimas */
+            
+            body { 
+                background-color: white; 
+                color: black; 
+                font-family: sans-serif; 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important;
+                font-size: 10pt; /* Fonte base menor */
+            }
+
+            /* Esconder elementos de navegação */
             .no-print { display: none !important; }
             .print-only { display: block !important; }
-            body { background-color: white; color: black; font-family: sans-serif; }
+
+            /* Resetar estilos escuros */
             .bg-stone-900, .bg-stone-950, .bg-white { background-color: white !important; border: none !important; color: black !important; }
             .text-stone-100, .text-stone-200, .text-stone-300, .text-stone-400, .text-stone-500 { color: black !important; }
             .border-stone-800, .border-stone-700 { border-color: #ccc !important; }
             .shadow-lg, .shadow-sm { box-shadow: none !important; }
             
-            /* Ajustes específicos para gráficos na impressão */
-            svg { break-inside: avoid; }
-            .page-break { page-break-before: always; }
+            /* Compactação Geral */
+            .print-container {
+                width: 100% !important;
+                max-width: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                zoom: 0.85; /* Reduz escala para caber mais */
+            }
+
+            .print-border { border: 1px solid #ddd !important; padding: 10px !important; border-radius: 4px; }
             
-            /* Forçar impressão de background para barras coloridas se o navegador permitir */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            /* Grid para economizar espaço vertical */
+            .print-grid-2 { 
+                display: grid; 
+                grid-template-columns: 1fr 1fr; 
+                gap: 10px; 
+            }
+            
+            /* Evitar quebra de página dentro de elementos chave */
+            .no-break { break-inside: avoid; page-break-inside: avoid; }
+            
+            /* Imagens menores na impressão */
+            .print-img-small { height: 60px !important; width: auto !important; }
+            
+            /* Remover barras de rolagem */
+            ::-webkit-scrollbar { display: none; }
         }
 
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -113,8 +146,8 @@
             History: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         };
 
-        const getWeekID = () => {
-            const now = new Date();
+        const getWeekID = (dateStr) => {
+            const now = dateStr ? new Date(dateStr) : new Date();
             const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
             const dayNum = d.getUTCDay() || 7;
             d.setUTCDate(d.getUTCDate() + 4 - dayNum);
@@ -268,12 +301,14 @@
             const [data, setData] = useState({ questions: [], inspections: [], lastBackup: null, logo: null });
             
             // Estado Inspeção
+            const [inspectionDate, setInspectionDate] = useState(new Date().toISOString().split('T')[0]);
             const [answers, setAnswers] = useState({});
             const [obs, setObs] = useState({});
-            const [evidences, setEvidences] = useState({});
+            const [evidences, setEvidences] = useState({}); // { qId: [base64, base64] }
             const [signature, setSignature] = useState(null);
             const [editingInspectionId, setEditingInspectionId] = useState(null);
-            
+            const [previousNCs, setPreviousNCs] = useState({}); // { qId: "Obs" }
+
             // Estado Relatório
             const [reportInspection, setReportInspection] = useState(null);
             const [actionPlan, setActionPlan] = useState('');
@@ -298,7 +333,8 @@
                 if (view !== 'loading') Storage.set(data);
             }, [data, view]);
 
-            const weekId = getWeekID();
+            const weekId = getWeekID(inspectionDate); // Use inspection date for week calc
+            const currentWeekId = getWeekID(new Date().toISOString());
             
             const allSetors = useMemo(() => {
                 const s = new Set(data.questions.map(p => p.setor).filter(x => x !== 'TODOS'));
@@ -306,8 +342,8 @@
             }, [data.questions]);
 
             const inspectionsThisWeek = useMemo(() => {
-                return data.inspections.filter(i => i.weekId === weekId);
-            }, [data.inspections, weekId]);
+                return data.inspections.filter(i => i.weekId === currentWeekId);
+            }, [data.inspections, currentWeekId]);
 
             const setoresConcluidos = useMemo(() => new Set(inspectionsThisWeek.map(i => i.setor)), [inspectionsThisWeek]);
 
@@ -356,17 +392,37 @@
                 setEvidences({});
                 setSignature(null);
                 setEditingInspectionId(null);
+                setInspectionDate(new Date().toISOString().split('T')[0]);
+                
+                // Find Last Inspection for NCs
+                const sortedInspections = data.inspections
+                    .filter(i => i.setor === setor)
+                    .sort((a, b) => new Date(b.data) - new Date(a.data));
+                
+                const lastInsp = sortedInspections[0];
+                const prevNCsMap = {};
+                if (lastInsp) {
+                    Object.entries(lastInsp.respostas).forEach(([qId, val]) => {
+                        if(val === 'NC') {
+                            prevNCsMap[qId] = lastInsp.observacoes[qId] || "Sem observação";
+                        }
+                    });
+                }
+                setPreviousNCs(prevNCsMap);
+
                 setView('inspection');
             };
 
             const handleEditInspection = (insp) => {
                 setSelectedSetor(insp.setor);
                 setResponsavel(insp.responsavel);
+                setInspectionDate(insp.data.split('T')[0]); // Extract date YYYY-MM-DD
                 setAnswers(insp.respostas);
                 setObs(insp.observacoes);
-                setEvidences(insp.evidencias || {});
+                setEvidences(insp.evidencias || {}); // Ensure structure handles legacy single strings if needed? No, assuming new structure moving forward or handle check
                 setSignature(insp.assinatura);
                 setEditingInspectionId(insp.id);
+                setPreviousNCs({}); // No prev NCs on edit mode context usually
                 setView('inspection');
             };
 
@@ -393,11 +449,23 @@
                         const ctx = canvas.getContext("2d");
                         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7); 
-                        setEvidences(prev => ({...prev, [qId]: compressedBase64}));
+                        
+                        setEvidences(prev => {
+                            const currentList = prev[qId] ? (Array.isArray(prev[qId]) ? prev[qId] : [prev[qId]]) : [];
+                            return { ...prev, [qId]: [...currentList, compressedBase64] };
+                        });
                     }
                     img.src = event.target.result;
                 }
                 reader.readAsDataURL(file);
+            };
+
+            const removePhoto = (qId, index) => {
+                setEvidences(prev => {
+                    const currentList = prev[qId] ? (Array.isArray(prev[qId]) ? prev[qId] : [prev[qId]]) : [];
+                    const newList = currentList.filter((_, i) => i !== index);
+                    return { ...prev, [qId]: newList };
+                });
             };
 
             const handleSaveInspection = () => {
@@ -409,8 +477,8 @@
                     id: editingInspectionId || Date.now().toString(),
                     setor: selectedSetor,
                     responsavel: responsavel,
-                    data: editingInspectionId ? (data.inspections.find(i => i.id === editingInspectionId).data) : new Date().toISOString(),
-                    weekId: getWeekID(),
+                    data: new Date(inspectionDate).toISOString(), // Use selected date
+                    weekId: getWeekID(inspectionDate),
                     score: scores.real,
                     bonusScore: scores.bonus,
                     respostas: answers,
@@ -426,12 +494,32 @@
                         inspections: prev.inspections.map(i => i.id === editingInspectionId ? newInspection : i)
                     }));
                 } else {
-                    const otherInspections = data.inspections.filter(i => !(i.weekId === weekId && i.setor === selectedSetor));
+                    // Overwrite logic based on same week/sector
+                    const weekOfInspection = getWeekID(inspectionDate);
+                    const otherInspections = data.inspections.filter(i => !(i.weekId === weekOfInspection && i.setor === selectedSetor));
                     setData(prev => ({...prev, inspections: [...otherInspections, newInspection]}));
                 }
                 
                 setReportInspection(newInspection);
                 setView('report');
+            };
+
+            const handleFinishCycle = () => {
+                if(confirm("Deseja finalizar esta rodada? \n\nATENÇÃO: Isso limpará os dados da tela para iniciar uma nova rodada. Certifique-se de ter salvo o backup ou relatórios se necessário. (Os dados históricos continuarão salvos no navegador, mas não aparecerão no dashboard da semana atual até que a semana vire).")) {
+                    // To "Start New", effectively we just want to clear the active view.
+                    // But since the dashboard is tied to `currentWeekId` derived from Date, we can't just "clear" it without deleting data or changing the date.
+                    // The simplest "Reset" for offline usage is deleting the current week's data to start fresh.
+                    // OR we could implement a "cycle" counter. 
+                    // Given the request "Start *other* audits", deleting current week's data from storage seems to be the intended "Reset" behavior for a kiosk-like experience or just starting over.
+                    // BUT, let's be safe: we will just reload the page or clear the local state if it was session based? No, it's persisted.
+                    // Let's implement the delete current week's inspections approach as it's the only way to "Start Fresh" on the same week in this architecture without a 'cycle' ID.
+                    
+                    setData(prev => ({
+                        ...prev,
+                        inspections: prev.inspections.filter(i => i.weekId !== currentWeekId)
+                    }));
+                    alert("Ciclo finalizado! O painel está pronto para novas auditorias.");
+                }
             };
 
             const handleSaveQuestion = (e) => {
@@ -582,36 +670,67 @@
             if (view === 'report' && reportInspection) {
                 const reportQuestions = data.questions.filter(q => q.setor === reportInspection.setor || q.setor === 'TODOS');
                 return (
-                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto">
+                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
                         <div className="flex justify-between items-center mb-6 no-print">
                             <button onClick={() => setView('dashboard')} className="bg-stone-800 text-white px-4 py-2 rounded">Voltar</button>
                             <button onClick={() => window.print()} className="bg-yellow-600 text-black font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.List /> Imprimir / PDF</button>
                         </div>
-                        <div className="border border-gray-300 p-8">
-                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
-                                <div><h1 className="text-2xl font-bold uppercase">Relatório de Inspeção</h1><p className="text-sm text-gray-600">Gestão de Qualidade IMAC</p></div>
-                                {data.logo && <img src={data.logo} className="h-12 object-contain" />}
+                        <div className="border border-gray-300 p-8 print-border print-scale-down">
+                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6 print:mb-2 print:pb-2">
+                                <div><h1 className="text-2xl font-bold uppercase print:text-lg">Relatório de Inspeção</h1><p className="text-sm text-gray-600 print:text-xs">Gestão de Qualidade IMAC</p></div>
+                                {data.logo && <img src={data.logo} className="h-12 object-contain print-img-small" />}
                             </div>
-                            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                            <div className="grid grid-cols-2 gap-4 mb-6 text-sm print:text-xs print:mb-2">
                                 <div><span className="font-bold">Setor:</span> {reportInspection.setor}</div>
-                                <div><span className="font-bold">Data:</span> {new Date(reportInspection.data).toLocaleString()}</div>
+                                <div><span className="font-bold">Data:</span> {new Date(reportInspection.data).toLocaleDateString()}</div>
                                 <div><span className="font-bold">Auditor:</span> {reportInspection.responsavel}</div>
                                 <div><span className="font-bold">Semana:</span> {reportInspection.weekId}</div>
                             </div>
                             
-                            <div className="flex gap-4 mb-8">
-                                <div className="flex-1 p-4 bg-gray-100 rounded text-center">
-                                    <span className="text-lg font-bold">Nota Real: </span>
-                                    <span className={`text-2xl font-black ${reportInspection.score >= 80 ? 'text-green-700' : 'text-red-700'}`}>{reportInspection.score}%</span>
+                            <div className="flex gap-4 mb-8 print:mb-4">
+                                <div className="flex-1 p-4 bg-gray-100 rounded text-center print:p-2">
+                                    <span className="text-lg font-bold print:text-sm">Nota Real: </span>
+                                    <span className={`text-2xl font-black ${reportInspection.score >= 80 ? 'text-green-700' : 'text-red-700'} print:text-lg`}>{reportInspection.score}%</span>
                                 </div>
-                                <div className="flex-1 p-4 bg-gray-100 rounded text-center border-l-4 border-yellow-500">
-                                    <span className="text-lg font-bold text-gray-700">Nota Gratificação: </span>
-                                    <span className="text-2xl font-black text-gray-900">{reportInspection.bonusScore || reportInspection.score}%</span>
+                                <div className="flex-1 p-4 bg-gray-100 rounded text-center border-l-4 border-yellow-500 print:p-2">
+                                    <span className="text-lg font-bold text-gray-700 print:text-sm">Nota Gratificação: </span>
+                                    <span className="text-2xl font-black text-gray-900 print:text-lg">{reportInspection.bonusScore || reportInspection.score}%</span>
                                 </div>
                             </div>
 
-                            <div className="mb-8"><h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Não Conformidades</h3>{reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').length === 0 ? (<p className="text-sm italic text-gray-500">Nenhuma não conformidade registrada.</p>) : (<div className="space-y-4">{reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').map(q => (<div key={q.id} className="border border-red-100 bg-red-50 p-3 rounded page-break"><div className="flex justify-between"><span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded">{q.grupo}</span></div><p className="font-bold text-sm mt-2">{q.pergunta}</p><p className="text-sm mt-1 text-red-800"><span className="font-bold">Obs:</span> {reportInspection.observacoes[q.id] || '-'}</p>{reportInspection.evidencias && reportInspection.evidencias[q.id] && (<div className="mt-2"><p className="text-xs font-bold mb-1">Evidência Fotográfica:</p><img src={reportInspection.evidencias[q.id]} className="h-32 object-contain border border-gray-300 bg-white" /></div>)}</div>))}</div>)}</div>
-                            <div className="mt-12 flex justify-between items-end"><div className="text-center w-1/3"><p className="font-bold text-sm mb-8">{reportInspection.responsavel}</p><div className="border-t border-black pt-1 text-xs">Auditor Responsável</div></div><div className="text-center w-1/3">{reportInspection.assinatura ? (<img src={reportInspection.assinatura} className="h-16 mx-auto mb-2" />) : <div className="h-16"></div>}<div className="border-t border-black pt-1 text-xs">Supervisão da Qualidade</div></div></div>
+                            <div className="mb-8 print:mb-2">
+                                <h3 className="font-bold border-b border-gray-300 mb-4 pb-1 print:text-sm print:mb-2">Não Conformidades</h3>
+                                {reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').length === 0 ? (
+                                    <p className="text-sm italic text-gray-500 print:text-xs">Nenhuma não conformidade registrada.</p>
+                                ) : (
+                                    <div className="space-y-4 print-grid-2 print:space-y-0">
+                                        {reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').map(q => (
+                                            <div key={q.id} className="border border-red-100 bg-red-50 p-3 rounded no-break print:p-2">
+                                                <div className="flex justify-between">
+                                                    <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded print:text-[10px]">{q.grupo}</span>
+                                                </div>
+                                                <p className="font-bold text-sm mt-2 print:text-xs">{q.pergunta}</p>
+                                                <p className="text-sm mt-1 text-red-800 print:text-xs"><span className="font-bold">Obs:</span> {reportInspection.observacoes[q.id] || '-'}</p>
+                                                {reportInspection.evidencias && reportInspection.evidencias[q.id] && (Array.isArray(reportInspection.evidencias[q.id]) ? reportInspection.evidencias[q.id] : [reportInspection.evidencias[q.id]]).map((img, idx) => (
+                                                    <div key={idx} className="mt-2 inline-block mr-2">
+                                                        <img src={img} className="h-32 object-contain border border-gray-300 bg-white print-img-small" />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-12 flex justify-between items-end print:mt-4">
+                                <div className="text-center w-1/3">
+                                    <p className="font-bold text-sm mb-8 print:mb-4 print:text-xs">{reportInspection.responsavel}</p>
+                                    <div className="border-t border-black pt-1 text-xs">Auditor Responsável</div>
+                                </div>
+                                <div className="text-center w-1/3">
+                                    {reportInspection.assinatura ? (<img src={reportInspection.assinatura} className="h-16 mx-auto mb-2 print-img-small" />) : <div className="h-16 print:h-8"></div>}
+                                    <div className="border-t border-black pt-1 text-xs">Supervisão da Qualidade</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 );
@@ -620,117 +739,119 @@
             // VIEW: MANAGEMENT REPORT (NOVO RELATÓRIO GERENCIAL)
             if (view === 'management_report') {
                 return (
-                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto">
+                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
                         <div className="flex justify-between items-center mb-6 no-print">
                             <button onClick={() => setView('analytics')} className="bg-stone-800 text-white px-4 py-2 rounded">Voltar</button>
                             <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.Printer /> Imprimir Relatório</button>
                         </div>
 
-                        <div className="bg-white p-8 border border-gray-300 shadow-sm print:shadow-none print:border-none">
+                        <div className="bg-white p-8 border border-gray-300 shadow-sm print:shadow-none print:border-none print-scale-down">
                             {/* Header */}
-                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8">
+                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8 print:mb-4 print:pb-2">
                                 <div>
-                                    <h1 className="text-3xl font-bold uppercase tracking-tight">Relatório Gerencial</h1>
-                                    <p className="text-sm text-gray-500 uppercase tracking-widest mt-1">Indicadores de Qualidade - IMAC</p>
+                                    <h1 className="text-3xl font-bold uppercase tracking-tight print:text-xl">Relatório Gerencial</h1>
+                                    <p className="text-sm text-gray-500 uppercase tracking-widest mt-1 print:text-xs">Indicadores de Qualidade - IMAC</p>
                                 </div>
-                                {data.logo && <img src={data.logo} className="h-16 object-contain" />}
+                                {data.logo && <img src={data.logo} className="h-16 object-contain print-img-small" />}
                             </div>
 
                             {/* Info */}
-                            <div className="flex justify-between mb-8 text-sm bg-gray-50 p-4 rounded border border-gray-200">
+                            <div className="flex justify-between mb-8 text-sm bg-gray-50 p-4 rounded border border-gray-200 print:mb-4 print:p-2 print:text-xs">
                                 <div><strong>Período:</strong> {analyticsTab === 'weekly' ? 'Semanal (' + getWeekRange() + ')' : 'Mensal (' + selectedMonth + ')'}</div>
                                 <div><strong>Emissão:</strong> {new Date().toLocaleDateString()}</div>
                             </div>
 
                             {/* Resumo Executivo */}
-                            <div className="mb-8">
-                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700">1. Resumo Executivo</h2>
-                                <p className="text-justify leading-relaxed text-gray-800">{analytics.summaryText}</p>
+                            <div className="mb-8 print:mb-4">
+                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">1. Resumo Executivo</h2>
+                                <p className="text-justify leading-relaxed text-gray-800 print:text-xs">{analytics.summaryText}</p>
                             </div>
 
                             {/* KPIs */}
-                            <div className="grid grid-cols-4 gap-4 mb-8 text-center">
-                                <div className="p-4 border rounded bg-gray-50">
-                                    <div className="text-3xl font-black text-gray-800">{analytics.avgScore}%</div>
-                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1">Média Geral</div>
+                            <div className="grid grid-cols-4 gap-4 mb-8 text-center print:mb-4 print:gap-2">
+                                <div className="p-4 border rounded bg-gray-50 print:p-2">
+                                    <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.avgScore}%</div>
+                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Média Geral</div>
                                 </div>
-                                <div className="p-4 border rounded bg-yellow-50 border-yellow-200">
-                                    <div className="text-3xl font-black text-yellow-800">{analytics.avgBonusScore}%</div>
-                                    <div className="text-xs uppercase text-yellow-800 font-bold mt-1">Média Gratificação</div>
+                                <div className="p-4 border rounded bg-yellow-50 border-yellow-200 print:p-2">
+                                    <div className="text-3xl font-black text-yellow-800 print:text-xl">{analytics.avgBonusScore}%</div>
+                                    <div className="text-xs uppercase text-yellow-800 font-bold mt-1 print:text-[10px]">Média Gratificação</div>
                                 </div>
-                                <div className="p-4 border rounded bg-gray-50">
-                                    <div className="text-3xl font-black text-gray-800">{analytics.ranking.length}</div>
-                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1">Inspeções</div>
+                                <div className="p-4 border rounded bg-gray-50 print:p-2">
+                                    <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.ranking.length}</div>
+                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Inspeções</div>
                                 </div>
-                                <div className="p-4 border rounded bg-gray-50">
-                                    <div className="text-3xl font-black text-gray-800">{analytics.pieCategory.length > 0 ? analytics.pieCategory[0].value : 0}</div>
-                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1">Maior Incidência (NC)</div>
-                                </div>
-                            </div>
-
-                            {/* Destaques */}
-                            <div className="grid grid-cols-2 gap-8 mb-8">
-                                <div>
-                                    <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-green-700">Top 3 - Melhores Setores</h2>
-                                    <ul className="text-sm space-y-2">
-                                        {analytics.ranking.slice(0, 3).map((r, i) => (
-                                            <li key={i} className="flex justify-between border-b border-gray-100 pb-1">
-                                                <span>{i+1}. {r.setor}</span>
-                                                <span className="font-bold">{r.score}%</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                                <div>
-                                    <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-red-700">Atenção - Menores Índices</h2>
-                                    <ul className="text-sm space-y-2">
-                                        {[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (
-                                            <li key={i} className="flex justify-between border-b border-gray-100 pb-1">
-                                                <span>{i+1}. {r.setor}</span>
-                                                <span className="font-bold text-red-600">{r.score}%</span>
-                                            </li>
-                                        ))}
-                                    </ul>
+                                <div className="p-4 border rounded bg-gray-50 print:p-2">
+                                    <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.pieCategory.length > 0 ? analytics.pieCategory[0].value : 0}</div>
+                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Maior Incidência (NC)</div>
                                 </div>
                             </div>
 
-                            {/* Análise Gráfica */}
-                            <div className="mb-8 page-break">
-                                <h2 className="text-lg font-bold border-b border-gray-300 mb-4 pb-1 uppercase text-gray-700">3. Análise de Ocorrências</h2>
-                                <div className="grid grid-cols-2 gap-8">
+                            <div className="print-grid-2">
+                                {/* Destaques */}
+                                <div className="grid grid-cols-2 gap-8 mb-8 print:mb-4 print:gap-4 no-break">
                                     <div>
-                                        <h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Categoria</h4>
-                                        <div className="border p-4 rounded flex justify-center bg-gray-50">
-                                            <PieChart data={analytics.pieCategory} />
-                                        </div>
+                                        <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-green-700 print:text-xs">Top 3 - Melhores</h2>
+                                        <ul className="text-sm space-y-2 print:text-xs">
+                                            {analytics.ranking.slice(0, 3).map((r, i) => (
+                                                <li key={i} className="flex justify-between border-b border-gray-100 pb-1">
+                                                    <span>{i+1}. {r.setor}</span>
+                                                    <span className="font-bold">{r.score}%</span>
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
                                     <div>
-                                        <h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Setor</h4>
-                                        <div className="border p-4 rounded flex justify-center bg-gray-50">
-                                            <PieChart data={analytics.pieSector} />
+                                        <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-red-700 print:text-xs">Atenção - Menores</h2>
+                                        <ul className="text-sm space-y-2 print:text-xs">
+                                            {[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (
+                                                <li key={i} className="flex justify-between border-b border-gray-100 pb-1">
+                                                    <span>{i+1}. {r.setor}</span>
+                                                    <span className="font-bold text-red-600">{r.score}%</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                {/* Análise Gráfica */}
+                                <div className="mb-8 print:mb-4 no-break">
+                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-4 pb-1 uppercase text-gray-700 print:text-sm">3. Análise de Ocorrências</h2>
+                                    <div className="grid grid-cols-2 gap-8 print:gap-2">
+                                        <div>
+                                            <h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Categoria</h4>
+                                            <div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2">
+                                                <PieChart data={analytics.pieCategory} />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Setor</h4>
+                                            <div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2">
+                                                <PieChart data={analytics.pieSector} />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Plano de Ação */}
-                            <div className="mb-12">
-                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700">4. Plano de Ação (Supervisão da Qualidade)</h2>
+                            <div className="mb-12 print:mb-4 no-break">
+                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">4. Plano de Ação (Supervisão)</h2>
                                 <textarea 
                                     className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" 
-                                    placeholder="Digite aqui as ações corretivas, prazos ou observações..."
+                                    placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..."
                                     value={actionPlan}
                                     onChange={e => setActionPlan(e.target.value)}
                                 />
-                                <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[10rem]">
+                                <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[5rem] print:text-xs">
                                     {actionPlan || "Nenhuma observação registrada."}
                                 </div>
                             </div>
 
                             {/* Assinatura Gerência */}
-                            <div className="mt-16 flex justify-end">
+                            <div className="mt-16 flex justify-end print:mt-8 no-break">
                                 <div className="text-center w-1/3">
-                                    <div className="border-t border-black pt-2 font-bold text-sm">Supervisão da Qualidade</div>
+                                    <div className="border-t border-black pt-2 font-bold text-sm print:text-xs">Supervisão da Qualidade</div>
                                     <div className="text-xs text-gray-500">{new Date().toLocaleDateString()}</div>
                                 </div>
                             </div>
@@ -779,6 +900,20 @@
                                     );
                                 })}
                             </div>
+
+                            {/* BOTÃO FINALIZAR RODADA (100% COMPLETO) */}
+                            {progress.pct === 100 && (
+                                <div className="mt-8 p-4 bg-stone-900 rounded-xl border border-yellow-600/50 text-center animate-fade-in mb-6">
+                                    <h3 className="text-yellow-500 font-bold text-lg mb-2">Auditoria Completa!</h3>
+                                    <p className="text-stone-400 text-sm mb-4">Todos os setores foram verificados nesta semana.</p>
+                                    <button 
+                                        onClick={handleFinishCycle}
+                                        className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow-lg hover:bg-green-500 transition-all active:scale-95 flex items-center justify-center gap-2"
+                                    >
+                                        <Icons.Check /> Finalizar e Iniciar Nova
+                                    </button>
+                                </div>
+                            )}
                         </main>
                     </div>
                 );
@@ -1062,21 +1197,50 @@
             if (view === 'inspection') {
                 return (
                     <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in">
-                        <header className="sticky top-0 z-10 bg-stone-900 border-b border-stone-800 px-6 py-4 flex items-center justify-between shadow-md">
-                            <div><h2 className="text-lg font-bold text-stone-100">{selectedSetor}</h2><p className="text-xs text-stone-500">Resp: {responsavel}</p></div>
-                            <div className="text-right">
-                                <span className={`text-2xl font-black ${scoreAtual >= 80 ? 'text-green-500' : 'text-red-500'}`}>{scoreAtual}%</span>
-                                <span className="text-xs font-bold text-stone-500 block">REAL</span>
+                        <header className="sticky top-0 z-10 bg-stone-900 border-b border-stone-800 px-6 py-4 shadow-md">
+                            <div className="flex justify-between items-start mb-2">
+                                <div><h2 className="text-lg font-bold text-stone-100">{selectedSetor}</h2><p className="text-xs text-stone-500">Resp: {responsavel}</p></div>
+                                <div className="text-right">
+                                    <div className="flex flex-col items-end">
+                                        <label className="text-[10px] text-stone-500 font-bold uppercase">Data</label>
+                                        <input 
+                                            type="date" 
+                                            value={inspectionDate} 
+                                            onChange={(e) => setInspectionDate(e.target.value)} 
+                                            className="bg-transparent text-stone-300 text-sm font-bold text-right outline-none focus:text-yellow-500"
+                                        />
+                                    </div>
+                                </div>
                             </div>
-                            <div className="text-right border-l border-stone-800 pl-4">
-                                <span className="text-xl font-bold text-yellow-500">{scores.bonus}%</span>
-                                <span className="text-xs font-bold text-yellow-700 block">BÔNUS</span>
+                            <div className="flex justify-between items-center pt-2 border-t border-stone-800 mt-2">
+                                <div className="text-center w-1/2 border-r border-stone-800">
+                                    <span className={`text-2xl font-black ${scores.real >= 80 ? 'text-green-500' : 'text-red-500'}`}>{scores.real}%</span>
+                                    <span className="text-[10px] font-bold text-stone-500 block uppercase">Real</span>
+                                </div>
+                                <div className="text-center w-1/2">
+                                    <span className="text-xl font-bold text-yellow-500">{scores.bonus}%</span>
+                                    <span className="text-[10px] font-bold text-yellow-700 block uppercase">Bônus</span>
+                                </div>
                             </div>
                         </header>
                         <main className="flex-1 p-6 space-y-6 pb-24 overflow-y-auto">
-                            {currentQuestions.map((q, idx) => (
+                            {currentQuestions.map((q, idx) => {
+                                const prevNC = previousNCs[q.id];
+                                return (
                                 <div key={q.id || idx} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                     <div className="mb-2"><span className="text-[10px] font-bold text-yellow-600 bg-yellow-900/20 border border-yellow-900/30 px-2 py-1 rounded uppercase">{q.grupo}</span><p className="mt-2 text-stone-200 font-medium leading-snug">{q.pergunta}</p></div>
+                                    
+                                    {/* ALERTA DE NC ANTERIOR */}
+                                    {prevNC && (
+                                        <div className="mb-3 p-2 bg-yellow-900/20 border-l-2 border-yellow-600 rounded-r text-xs text-yellow-200/80 flex gap-2 items-start">
+                                            <Icons.Alert />
+                                            <div>
+                                                <span className="font-bold block text-yellow-500">Atenção (Última Inspeção):</span>
+                                                "{prevNC}"
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="flex gap-2">
                                         {['C', 'NC', 'NA'].map(opt => (
                                             <button key={opt} onClick={() => setAnswers(p => ({...p, [q.id]: opt}))} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all shadow-lg ${answers[q.id] === opt ? (opt === 'C' ? 'bg-green-600 text-white shadow-green-900/40' : opt === 'NC' ? 'bg-red-600 text-white shadow-red-900/40' : 'bg-stone-600 text-white') : 'bg-stone-900 text-stone-500 hover:bg-stone-800'}`}>{opt}</button>
@@ -1088,21 +1252,33 @@
                                         <div className="mt-2 space-y-2 animate-fade-in">
                                             <input type="text" placeholder="Descreva o problema..." value={obs[q.id] || ''} onChange={(e) => setObs(p => ({...p, [q.id]: e.target.value}))} className="w-full text-sm p-3 bg-red-900/10 border-red-900/30 rounded-lg text-red-200 focus:border-red-500 outline-none border placeholder-red-800/50" />
                                             
+                                            {/* Galeria de Fotos */}
+                                            {evidences[q.id] && evidences[q.id].length > 0 && (
+                                                <div className="flex gap-2 overflow-x-auto py-2">
+                                                    {evidences[q.id].map((img, i) => (
+                                                        <div key={i} className="relative w-16 h-16 shrink-0 group">
+                                                            <img src={img} className="w-full h-full object-cover rounded border border-stone-700" />
+                                                            <button onClick={() => removePhoto(q.id, i)} className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-0.5 shadow-md w-5 h-5 flex items-center justify-center text-xs font-bold">x</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
                                             <div className="flex items-center gap-2">
-                                                <label className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed cursor-pointer transition-colors ${evidences[q.id] ? 'border-green-500 text-green-400 bg-green-900/10' : 'border-stone-700 text-stone-500 hover:border-stone-500'}`}>
+                                                <label className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed cursor-pointer transition-colors ${evidences[q.id] && evidences[q.id].length > 0 ? 'border-green-500 text-green-400 bg-green-900/10' : 'border-stone-700 text-stone-500 hover:border-stone-500'}`}>
                                                     <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handlePhotoUpload(q.id, e)} />
                                                     <Icons.Camera />
-                                                    <span className="text-xs font-bold">{evidences[q.id] ? 'Foto Registrada' : 'Adicionar Foto'}</span>
+                                                    <span className="text-xs font-bold">Adicionar Foto</span>
                                                 </label>
                                             </div>
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                            );})}
 
                             {/* Área de Assinatura */}
                             <div className="mt-8 border-t border-stone-800 pt-6">
-                                <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura da Supervisão da Qualidade</h3>
+                                <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura do Responsável</h3>
                                 <p className="text-xs text-stone-500 mb-2">Assine na área branca abaixo:</p>
                                 <SignaturePad onSave={setSignature} initialData={signature} />
                                 {signature && <p className="text-xs text-green-500 mt-1 text-right">Assinatura capturada ✓</p>}
