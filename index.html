@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMAC - Gestão Semanal (Offline)</title>
+    <title>IMAC - Gestão Semanal</title>
     
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -109,7 +109,8 @@
             Camera: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>,
             Pen: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>,
             Printer: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>,
-            FileText: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            FileText: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+            History: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         };
 
         const getWeekID = () => {
@@ -197,7 +198,7 @@
         };
 
         // --- COMPONENTE ASSINATURA ---
-        const SignaturePad = ({ onSave }) => {
+        const SignaturePad = ({ onSave, initialData }) => {
             const canvasRef = useRef(null);
             const [isDrawing, setIsDrawing] = useState(false);
 
@@ -208,6 +209,12 @@
                 ctx.strokeStyle = "#000"; 
                 canvas.width = canvas.offsetWidth;
                 canvas.height = canvas.offsetHeight;
+                
+                if (initialData) {
+                    const img = new Image();
+                    img.onload = () => ctx.drawImage(img, 0, 0);
+                    img.src = initialData;
+                }
             }, []);
 
             const startDrawing = (e) => {
@@ -260,15 +267,19 @@
             const [responsavel, setResponsavel] = useState('');
             const [data, setData] = useState({ questions: [], inspections: [], lastBackup: null, logo: null });
             
+            // Estado Inspeção
             const [answers, setAnswers] = useState({});
             const [obs, setObs] = useState({});
             const [evidences, setEvidences] = useState({});
             const [signature, setSignature] = useState(null);
+            const [editingInspectionId, setEditingInspectionId] = useState(null);
             
+            // Estado Relatório
             const [reportInspection, setReportInspection] = useState(null);
             const [actionPlan, setActionPlan] = useState('');
 
-            const [settingsTab, setSettingsTab] = useState('questions');
+            // Filtros e Configs
+            const [settingsTab, setSettingsTab] = useState('history');
             const [analyticsTab, setAnalyticsTab] = useState('weekly'); 
             const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
             const [editingQ, setEditingQ] = useState(null);
@@ -312,14 +323,29 @@
                 return data.questions.filter(p => p.setor === selectedSetor || p.setor === 'TODOS');
             }, [selectedSetor, data.questions]);
 
-            const scoreAtual = useMemo(() => {
-                if (currentQuestions.length === 0) return 0;
-                let total = 0;
-                let conformes = 0;
+            const scores = useMemo(() => {
+                if (currentQuestions.length === 0) return { real: 0, bonus: 0 };
+                
+                let totalReal = 0, conformesReal = 0;
+                let totalBonus = 0, conformesBonus = 0;
+
                 currentQuestions.forEach(q => {
-                    if (answers[q.id]) { total++; if (answers[q.id] === 'C') conformes++; }
+                    const resp = answers[q.id];
+                    if (resp) {
+                        totalReal++;
+                        if (resp === 'C') conformesReal++;
+
+                        if (q.grupo !== 'ESTRUTURAL') {
+                            totalBonus++;
+                            if (resp === 'C') conformesBonus++;
+                        }
+                    }
                 });
-                return total === 0 ? 0 : Math.round((conformes / total) * 100);
+
+                return {
+                    real: totalReal === 0 ? 0 : Math.round((conformesReal / totalReal) * 100),
+                    bonus: totalBonus === 0 ? 0 : Math.round((conformesBonus / totalBonus) * 100)
+                };
             }, [answers, currentQuestions]);
 
             const handleStartInspection = (setor) => {
@@ -329,7 +355,27 @@
                 setObs({});
                 setEvidences({});
                 setSignature(null);
+                setEditingInspectionId(null);
                 setView('inspection');
+            };
+
+            const handleEditInspection = (insp) => {
+                setSelectedSetor(insp.setor);
+                setResponsavel(insp.responsavel);
+                setAnswers(insp.respostas);
+                setObs(insp.observacoes);
+                setEvidences(insp.evidencias || {});
+                setSignature(insp.assinatura);
+                setEditingInspectionId(insp.id);
+                setView('inspection');
+            };
+
+            const handleDeleteAudit = (id) => {
+                if (!confirm("Tem certeza que deseja apagar este registro? Essa ação não pode ser desfeita.")) return;
+                setData(prev => ({
+                    ...prev,
+                    inspections: prev.inspections.filter(i => i.id !== id)
+                }));
             };
 
             const handlePhotoUpload = (qId, e) => {
@@ -357,15 +403,16 @@
             const handleSaveInspection = () => {
                 const pendentes = currentQuestions.filter(q => !answers[q.id]);
                 if (pendentes.length > 0 && !confirm(`Existem ${pendentes.length} perguntas sem resposta. Salvar?`)) return;
-                if (!signature && !confirm("Salvar sem assinatura do responsável?")) return;
+                if (!signature && !confirm("Salvar sem assinatura da Supervisão da Qualidade?")) return;
 
                 const newInspection = {
-                    id: Date.now().toString(),
+                    id: editingInspectionId || Date.now().toString(),
                     setor: selectedSetor,
                     responsavel: responsavel,
-                    data: new Date().toISOString(),
+                    data: editingInspectionId ? (data.inspections.find(i => i.id === editingInspectionId).data) : new Date().toISOString(),
                     weekId: getWeekID(),
-                    score: scoreAtual,
+                    score: scores.real,
+                    bonusScore: scores.bonus,
                     respostas: answers,
                     observacoes: obs,
                     evidencias: evidences,
@@ -373,8 +420,16 @@
                     status: 'Concluído'
                 };
 
-                const otherInspections = data.inspections.filter(i => !(i.weekId === weekId && i.setor === selectedSetor));
-                setData(prev => ({...prev, inspections: [...otherInspections, newInspection]}));
+                if (editingInspectionId) {
+                    setData(prev => ({
+                        ...prev,
+                        inspections: prev.inspections.map(i => i.id === editingInspectionId ? newInspection : i)
+                    }));
+                } else {
+                    const otherInspections = data.inspections.filter(i => !(i.weekId === weekId && i.setor === selectedSetor));
+                    setData(prev => ({...prev, inspections: [...otherInspections, newInspection]}));
+                }
+                
                 setReportInspection(newInspection);
                 setView('report');
             };
@@ -446,6 +501,10 @@
 
                 const totalScore = filteredInspections.reduce((acc, curr) => acc + curr.score, 0);
                 const avgScore = filteredInspections.length ? Math.round(totalScore / filteredInspections.length) : 0;
+                
+                // Média de Gratificação Global
+                const totalBonusScore = filteredInspections.reduce((acc, curr) => acc + (curr.bonusScore || curr.score), 0);
+                const avgBonusScore = filteredInspections.length ? Math.round(totalBonusScore / filteredInspections.length) : 0;
 
                 // RANKING - Ordenação Decrescente
                 let ranking = [];
@@ -506,7 +565,6 @@
                     count: val.count
                 })).sort((a, b) => b.avg - a.avg);
 
-                // TEXTO DESCRITIVO AUTOMÁTICO
                 const totalInspections = filteredInspections.length;
                 const bestSector = ranking.length > 0 ? ranking[0].setor : "Nenhum";
                 const worstSector = ranking.length > 0 ? ranking[ranking.length - 1].setor : "Nenhum";
@@ -514,7 +572,7 @@
 
                 const summaryText = `Neste período (${analyticsTab === 'weekly' ? 'Semana' : 'Mês'}), foram realizadas ${totalInspections} inspeções, resultando em uma média global de ${avgScore}%. O setor com melhor desempenho foi "${bestSector}", enquanto "${worstSector}" apresentou os menores índices. A principal categoria de não conformidades foi "${mainIssue}".`;
 
-                return { avgScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText };
+                return { avgScore, avgBonusScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText };
             }, [data.inspections, data.questions, weekId, analyticsTab, selectedMonth]);
 
             
@@ -540,9 +598,20 @@
                                 <div><span className="font-bold">Auditor:</span> {reportInspection.responsavel}</div>
                                 <div><span className="font-bold">Semana:</span> {reportInspection.weekId}</div>
                             </div>
-                            <div className="mb-8 p-4 bg-gray-100 rounded text-center"><span className="text-lg font-bold">Nota Final: </span><span className={`text-2xl font-black ${reportInspection.score >= 80 ? 'text-green-700' : 'text-red-700'}`}>{reportInspection.score}%</span></div>
+                            
+                            <div className="flex gap-4 mb-8">
+                                <div className="flex-1 p-4 bg-gray-100 rounded text-center">
+                                    <span className="text-lg font-bold">Nota Real: </span>
+                                    <span className={`text-2xl font-black ${reportInspection.score >= 80 ? 'text-green-700' : 'text-red-700'}`}>{reportInspection.score}%</span>
+                                </div>
+                                <div className="flex-1 p-4 bg-gray-100 rounded text-center border-l-4 border-yellow-500">
+                                    <span className="text-lg font-bold text-gray-700">Nota Gratificação: </span>
+                                    <span className="text-2xl font-black text-gray-900">{reportInspection.bonusScore || reportInspection.score}%</span>
+                                </div>
+                            </div>
+
                             <div className="mb-8"><h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Não Conformidades</h3>{reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').length === 0 ? (<p className="text-sm italic text-gray-500">Nenhuma não conformidade registrada.</p>) : (<div className="space-y-4">{reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').map(q => (<div key={q.id} className="border border-red-100 bg-red-50 p-3 rounded page-break"><div className="flex justify-between"><span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded">{q.grupo}</span></div><p className="font-bold text-sm mt-2">{q.pergunta}</p><p className="text-sm mt-1 text-red-800"><span className="font-bold">Obs:</span> {reportInspection.observacoes[q.id] || '-'}</p>{reportInspection.evidencias && reportInspection.evidencias[q.id] && (<div className="mt-2"><p className="text-xs font-bold mb-1">Evidência Fotográfica:</p><img src={reportInspection.evidencias[q.id]} className="h-32 object-contain border border-gray-300 bg-white" /></div>)}</div>))}</div>)}</div>
-                            <div className="mt-12 flex justify-between items-end"><div className="text-center w-1/3"><p className="font-bold text-sm mb-8">{reportInspection.responsavel}</p><div className="border-t border-black pt-1 text-xs">Auditor Responsável</div></div><div className="text-center w-1/3">{reportInspection.assinatura ? (<img src={reportInspection.assinatura} className="h-16 mx-auto mb-2" />) : <div className="h-16"></div>}<div className="border-t border-black pt-1 text-xs">Responsável pelo Setor (Acompanhante)</div></div></div>
+                            <div className="mt-12 flex justify-between items-end"><div className="text-center w-1/3"><p className="font-bold text-sm mb-8">{reportInspection.responsavel}</p><div className="border-t border-black pt-1 text-xs">Auditor Responsável</div></div><div className="text-center w-1/3">{reportInspection.assinatura ? (<img src={reportInspection.assinatura} className="h-16 mx-auto mb-2" />) : <div className="h-16"></div>}<div className="border-t border-black pt-1 text-xs">Supervisão da Qualidade</div></div></div>
                         </div>
                     </div>
                 );
@@ -580,10 +649,14 @@
                             </div>
 
                             {/* KPIs */}
-                            <div className="grid grid-cols-3 gap-6 mb-8 text-center">
+                            <div className="grid grid-cols-4 gap-4 mb-8 text-center">
                                 <div className="p-4 border rounded bg-gray-50">
                                     <div className="text-3xl font-black text-gray-800">{analytics.avgScore}%</div>
                                     <div className="text-xs uppercase text-gray-500 font-bold mt-1">Média Geral</div>
+                                </div>
+                                <div className="p-4 border rounded bg-yellow-50 border-yellow-200">
+                                    <div className="text-3xl font-black text-yellow-800">{analytics.avgBonusScore}%</div>
+                                    <div className="text-xs uppercase text-yellow-800 font-bold mt-1">Média Gratificação</div>
                                 </div>
                                 <div className="p-4 border rounded bg-gray-50">
                                     <div className="text-3xl font-black text-gray-800">{analytics.ranking.length}</div>
@@ -642,10 +715,10 @@
 
                             {/* Plano de Ação */}
                             <div className="mb-12">
-                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700">4. Plano de Ação / Observações da Gerência</h2>
+                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700">4. Plano de Ação (Supervisão da Qualidade)</h2>
                                 <textarea 
                                     className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" 
-                                    placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..."
+                                    placeholder="Digite aqui as ações corretivas, prazos ou observações..."
                                     value={actionPlan}
                                     onChange={e => setActionPlan(e.target.value)}
                                 />
@@ -657,7 +730,7 @@
                             {/* Assinatura Gerência */}
                             <div className="mt-16 flex justify-end">
                                 <div className="text-center w-1/3">
-                                    <div className="border-t border-black pt-2 font-bold text-sm">Gerência de Qualidade</div>
+                                    <div className="border-t border-black pt-2 font-bold text-sm">Supervisão da Qualidade</div>
                                     <div className="text-xs text-gray-500">{new Date().toLocaleDateString()}</div>
                                 </div>
                             </div>
@@ -677,7 +750,7 @@
                             </div>
                             <div className="mb-4">
                                 {data.logo ? <img src={data.logo} alt="Logo" className="h-16 object-contain mb-2 drop-shadow-md" /> : <h1 className="text-2xl font-bold text-yellow-500">Gestão IMAC</h1>}
-                                <p className="text-stone-400 text-sm">Controle de Qualidade (Offline)</p>
+                                <p className="text-stone-400 text-sm">Controle de Qualidade</p>
                             </div>
                             <div className="bg-stone-800/60 backdrop-blur-md p-4 rounded-xl border border-yellow-900/40">
                                 <div className="flex justify-between items-end mb-2">
@@ -835,6 +908,9 @@
                     return matchSector && matchSearch;
                 });
 
+                // Ordenar auditorias por data decrescente
+                const sortedInspections = [...data.inspections].sort((a, b) => new Date(b.data) - new Date(a.data));
+
                 return (
                     <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in text-stone-100">
                         <header className="bg-stone-900 p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-800">
@@ -844,11 +920,63 @@
                         </header>
 
                         <div className="flex border-b border-stone-800 bg-stone-900/50 sticky top-[60px] z-10">
+                            <button onClick={() => setSettingsTab('history')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'history' ? 'border-yellow-600 text-yellow-500' : 'border-transparent text-stone-500 hover:text-stone-300'}`}>Histórico</button>
                             <button onClick={() => setSettingsTab('questions')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'questions' ? 'border-yellow-600 text-yellow-500' : 'border-transparent text-stone-500 hover:text-stone-300'}`}>Perguntas</button>
                             <button onClick={() => setSettingsTab('system')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'system' ? 'border-yellow-600 text-yellow-500' : 'border-transparent text-stone-500 hover:text-stone-300'}`}>Sistema</button>
                         </div>
 
                         <main className="flex-1 p-6 pb-24">
+                            {/* TAB: HISTÓRICO (AUDITS) */}
+                            {settingsTab === 'history' && (
+                                <div className="space-y-4 animate-fade-in">
+                                    <div className="text-xs text-stone-500 uppercase font-bold mb-2">Auditorias Realizadas ({sortedInspections.length})</div>
+                                    
+                                    {sortedInspections.length === 0 ? (
+                                        <div className="text-center py-10 text-stone-600">
+                                            <p>Nenhuma auditoria registrada.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {sortedInspections.map((insp) => (
+                                                <div key={insp.id} className="bg-stone-900 p-4 rounded-xl border border-stone-800 flex justify-between items-center group hover:border-yellow-900/50 transition-colors">
+                                                    <div>
+                                                        <div className="font-bold text-stone-200">{insp.setor}</div>
+                                                        <div className="text-xs text-stone-500 flex gap-2 mt-1">
+                                                            <span>{new Date(insp.data).toLocaleDateString()}</span>
+                                                            <span>•</span>
+                                                            <span>{insp.responsavel}</span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`text-sm font-bold ${insp.score >= 80 ? 'text-green-500' : 'text-red-500'}`}>
+                                                            {insp.score}%
+                                                        </span>
+                                                        
+                                                        <div className="flex gap-1 pl-2 border-l border-stone-800">
+                                                            <button 
+                                                                onClick={() => handleEditInspection(insp)}
+                                                                className="p-2 text-stone-400 hover:text-yellow-500 hover:bg-stone-800 rounded transition-colors"
+                                                                title="Editar"
+                                                            >
+                                                                <Icons.Edit />
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleDeleteAudit(insp.id)}
+                                                                className="p-2 text-stone-400 hover:text-red-500 hover:bg-stone-800 rounded transition-colors"
+                                                                title="Apagar"
+                                                            >
+                                                                <Icons.Trash />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {settingsTab === 'system' && (
                                 <div className="space-y-6 animate-fade-in">
                                     <div className="bg-stone-900 p-6 rounded-xl shadow-sm border border-stone-800">
@@ -936,7 +1064,14 @@
                     <div className="max-w-md mx-auto min-h-screen bg-stone-950 flex flex-col animate-fade-in">
                         <header className="sticky top-0 z-10 bg-stone-900 border-b border-stone-800 px-6 py-4 flex items-center justify-between shadow-md">
                             <div><h2 className="text-lg font-bold text-stone-100">{selectedSetor}</h2><p className="text-xs text-stone-500">Resp: {responsavel}</p></div>
-                            <div className="text-right"><span className={`text-2xl font-black ${scoreAtual >= 80 ? 'text-green-500' : 'text-red-500'}`}>{scoreAtual}%</span></div>
+                            <div className="text-right">
+                                <span className={`text-2xl font-black ${scoreAtual >= 80 ? 'text-green-500' : 'text-red-500'}`}>{scoreAtual}%</span>
+                                <span className="text-xs font-bold text-stone-500 block">REAL</span>
+                            </div>
+                            <div className="text-right border-l border-stone-800 pl-4">
+                                <span className="text-xl font-bold text-yellow-500">{scores.bonus}%</span>
+                                <span className="text-xs font-bold text-yellow-700 block">BÔNUS</span>
+                            </div>
                         </header>
                         <main className="flex-1 p-6 space-y-6 pb-24 overflow-y-auto">
                             {currentQuestions.map((q, idx) => (
@@ -967,9 +1102,9 @@
 
                             {/* Área de Assinatura */}
                             <div className="mt-8 border-t border-stone-800 pt-6">
-                                <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura do Responsável</h3>
+                                <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura da Supervisão da Qualidade</h3>
                                 <p className="text-xs text-stone-500 mb-2">Assine na área branca abaixo:</p>
-                                <SignaturePad onSave={setSignature} />
+                                <SignaturePad onSave={setSignature} initialData={signature} />
                                 {signature && <p className="text-xs text-green-500 mt-1 text-right">Assinatura capturada ✓</p>}
                             </div>
 
