@@ -79,10 +79,17 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- DADOS PADRÃO (Mantido mínimo para inicialização) ---
+        // --- DADOS PADRÃO (Atualizados com prefixos) ---
         const STATIC_DB_PERGUNTAS = [
-            { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "Manipuladores com fardamento completo e conservado?" },
-            { id: "def_2", setor: "ESTOQUE", grupo: "GERAL", pergunta: "Setor limpo (piso/parede/teto/portas)?" }
+            { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Manipuladores com fardamento completo e conservado?" },
+            { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Higiene pessoal adequada (unhas curtas, barba feita)?" },
+            { id: "def_3", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Setor limpo (piso/parede/teto/portas)?" },
+            { id: "def_4", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Produtos organizados e identificados (PVPS)?" },
+            { id: "def_5", setor: "ESTOQUE", grupo: "CÂMARA", pergunta: "CÂMARA - Temperaturas adequadas e registradas?" },
+            { id: "def_6", setor: "PRE_PESAGEM", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Uso correto de EPIs?" },
+            { id: "def_7", setor: "PRE_PESAGEM", grupo: "GERAL", pergunta: "SETOR GERAL - Bancadas limpas e organizadas?" },
+            { id: "def_8", setor: "PRE_PESAGEM", grupo: "CLIMA", pergunta: "CLIMATIZAÇÃO - Temperatura entre 17º e 20ºC?" },
+            // ... (Exemplo simplificado para inicialização)
         ];
 
         // --- ÍCONES ---
@@ -432,7 +439,7 @@
             const handleSaveInspection = () => {
                 const pendentes = currentQuestions.filter(q => !answers[q.id]);
                 if (pendentes.length > 0 && !confirm(`Existem ${pendentes.length} perguntas sem resposta. Salvar?`)) return;
-                if (!signature && !confirm("Salvar sem assinatura da Supervisão da Qualidade?")) return;
+                if (!signature && !confirm("Salvar sem assinatura do responsável?")) return;
 
                 const newInspection = {
                     id: editingInspectionId || Date.now().toString(),
@@ -474,28 +481,39 @@
                     const bstr = evt.target.result;
                     const wb = XLSX.read(bstr, {type:'binary'});
                     let importedQuestions = [];
-                    const keywords = ["LIMPEZA", "ESTRUTURAL", "ORGANIZAÇÃO", "AUTODISCIPLINA", "UTILIZAÇÃO", "MANIPULADOR", "DOCUMENTAÇÃO", "ILUMINAÇÃO", "PRAGAS", "CLIMATIZAÇÃO"];
+                    const keywords = ["LIMPEZA", "ESTRUTURAL", "ORGANIZAÇÃO", "AUTODISCIPLINA", "UTILIZAÇÃO", "MANIPULADOR", "DOCUMENTAÇÃO", "ILUMINAÇÃO", "PRAGAS", "CLIMATIZAÇÃO", "EQUIPAMENTOS", "PROCESSO", "INSUMOS"];
 
                     wb.SheetNames.forEach(sheetName => {
                         if(sheetName.toUpperCase().includes("RESULT") || sheetName.toUpperCase().includes("RECORR")) return;
                         const ws = wb.Sheets[sheetName];
                         const jsonData = XLSX.utils.sheet_to_json(ws, {header:1});
                         
+                        let currentSection = "GERAL";
+
                         jsonData.forEach((row) => {
-                            if(row.length < 2) return;
-                            let questionText = row[0];
-                            let groupText = row[1];
-                            if(!questionText || !groupText) return;
-                            questionText = String(questionText).trim();
-                            groupText = String(groupText).trim().toUpperCase();
-                            const isValidGroup = keywords.some(k => groupText.includes(k));
-                            if(isValidGroup && questionText.length > 5 && !questionText.toUpperCase().includes("MÉDIA")) {
+                            if(row.length < 1) return;
+                            
+                            let colA = row[0] ? String(row[0]).trim() : "";
+                            let colB = row[1] ? String(row[1]).trim().toUpperCase() : "";
+
+                            if (!colA) return;
+
+                            const isQuestion = keywords.some(k => colB.includes(k));
+
+                            if (isQuestion) {
                                 importedQuestions.push({
                                     id: "imp_" + Date.now() + Math.random().toString(16).slice(2),
                                     setor: sheetName.trim().toUpperCase(),
-                                    grupo: groupText,
-                                    pergunta: questionText
+                                    grupo: colB,
+                                    pergunta: `${currentSection} - ${colA}`
                                 });
+                            } else {
+                                // Heurística para detectar cabeçalho de seção na coluna A
+                                // Ignora cabeçalhos de tabela conhecidos
+                                const ignore = ["MANIPULADOR", "PLATAFORMA", "COLOCAÇÃO", "PONTUAÇÃO", "INCONFORMIDADES", "REQUISITO", "OBSERVAÇÃO"];
+                                if (!ignore.includes(colA.toUpperCase()) && colA.length > 3 && !colB) {
+                                     currentSection = colA.toUpperCase();
+                                }
                             }
                         });
                     });
@@ -730,7 +748,7 @@
                                 </div>
                                 <div className="text-center w-1/3">
                                     {reportInspection.assinatura ? (<img src={reportInspection.assinatura} className="h-16 mx-auto mb-2 print-img-small" />) : <div className="h-16 print:h-8"></div>}
-                                    <div className="border-t border-black pt-1 text-xs">Supervisão da Qualidade</div>
+                                    <div className="border-t border-black pt-1 text-xs">Responsável pelo acompanhamento da auditoria</div>
                                 </div>
                             </div>
                         </div>
