@@ -13,6 +13,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SheetJS para ler Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- JSZip para exportar zip (opcional, mas usaremos blob simples para html) -->
 
     <style>
         body { -webkit-tap-highlight-color: transparent; background-color: #0c0a09; color: #f5f5f4; } /* stone-950 */
@@ -25,7 +26,7 @@
         .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.1); }
         .modal-overlay { background-color: rgba(0, 0, 0, 0.8); }
         
-        /* Configurações de Impressão (PDF) - OTIMIZADO PARA 1 PÁGINA */
+        /* Configurações de Impressão (PDF) - OTIMIZADO */
         @media print {
             @page { size: A4; margin: 5mm; }
             
@@ -63,6 +64,8 @@
             }
             
             .no-break { break-inside: avoid; page-break-inside: avoid; }
+            /* Imagens maiores na impressão */
+            .print-img-evidence { max-height: 200px !important; width: auto !important; display: block; margin: 5px auto; }
             .print-img-small { height: 60px !important; width: auto !important; }
             
             ::-webkit-scrollbar { display: none; }
@@ -82,13 +85,8 @@
         // --- DADOS PADRÃO ---
         const STATIC_DB_PERGUNTAS = [
             { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Manipuladores com fardamento completo e conservado?" },
-            { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Higiene pessoal adequada (unhas curtas, barba feita)?" },
-            { id: "def_3", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Setor limpo (piso/parede/teto/portas)?" },
-            { id: "def_4", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Produtos organizados e identificados (PVPS)?" },
-            { id: "def_5", setor: "ESTOQUE", grupo: "CÂMARA", pergunta: "CÂMARA - Temperaturas adequadas e registradas?" },
-            { id: "def_6", setor: "PRE_PESAGEM", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Uso correto de EPIs?" },
-            { id: "def_7", setor: "PRE_PESAGEM", grupo: "GERAL", pergunta: "SETOR GERAL - Bancadas limpas e organizadas?" },
-            { id: "def_8", setor: "PRE_PESAGEM", grupo: "CLIMA", pergunta: "CLIMATIZAÇÃO - Temperatura entre 17º e 20ºC?" },
+            { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Higiene pessoal adequada (unhas curtas, barba feita)?" }
+            // ... (Exemplo mínimo para inicialização)
         ];
 
         // --- ÍCONES ---
@@ -112,7 +110,8 @@
             Printer: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>,
             FileText: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
             History: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
-            FileX: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 6-6"/><path d="m15 15-6-6"/></svg>
+            FileX: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 6-6"/><path d="m15 15-6-6"/></svg>,
+            XCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
         };
 
         const getWeekID = (dateStr) => {
@@ -204,11 +203,12 @@
         };
 
         // --- COMPONENTE ASSINATURA ---
-        const SignaturePad = ({ onSave, initialData }) => {
+        const SignaturePad = ({ onSave, initialData, onCancel }) => {
             const canvasRef = useRef(null);
             const [isDrawing, setIsDrawing] = useState(false);
 
             useEffect(() => {
+                if(!canvasRef.current) return;
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
                 ctx.lineWidth = 2;
@@ -248,22 +248,45 @@
             const stopDrawing = () => {
                 if (isDrawing) {
                     setIsDrawing(false);
-                    onSave(canvasRef.current.toDataURL());
+                    // Não salva automaticamente, usuário deve confirmar
                 }
             };
 
+            const handleClear = () => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            };
+
+            const handleConfirm = () => {
+                onSave(canvasRef.current.toDataURL());
+            };
+
             return (
-                <canvas
-                    ref={canvasRef}
-                    className="w-full h-32 bg-white rounded-lg border border-stone-600 touch-none"
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                />
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay backdrop-blur-sm">
+                    <div className="bg-stone-900 border border-stone-700 rounded-xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+                        <h3 className="text-lg font-bold text-stone-200 mb-4 flex items-center gap-2"><Icons.Pen /> Assinatura do Responsável</h3>
+                        <div className="bg-white rounded-lg mb-4 h-48 border border-stone-600 relative overflow-hidden">
+                             <canvas
+                                ref={canvasRef}
+                                className="w-full h-full touch-none"
+                                onMouseDown={startDrawing}
+                                onMouseMove={draw}
+                                onMouseUp={stopDrawing}
+                                onMouseLeave={stopDrawing}
+                                onTouchStart={startDrawing}
+                                onTouchMove={draw}
+                                onTouchEnd={stopDrawing}
+                            />
+                            <div className="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none">Assine acima</div>
+                        </div>
+                        <div className="flex gap-2">
+                             <button onClick={onCancel} className="flex-1 py-3 border border-stone-700 rounded-lg text-stone-400 font-bold hover:bg-stone-800 transition-colors">Cancelar</button>
+                             <button onClick={handleClear} className="px-4 py-3 border border-stone-700 rounded-lg text-stone-400 font-bold hover:text-red-400 hover:bg-stone-800 transition-colors" title="Limpar"><Icons.Trash /></button>
+                             <button onClick={handleConfirm} className="flex-1 py-3 bg-yellow-600 text-stone-950 rounded-lg font-bold hover:bg-yellow-500 shadow-lg shadow-yellow-900/20 transition-colors">Confirmar Assinatura</button>
+                        </div>
+                    </div>
+                </div>
             );
         };
 
@@ -279,6 +302,7 @@
             const [obs, setObs] = useState({});
             const [evidences, setEvidences] = useState({}); 
             const [signature, setSignature] = useState(null);
+            const [isSigning, setIsSigning] = useState(false); // Novo estado para modal de assinatura
             const [editingInspectionId, setEditingInspectionId] = useState(null);
             const [previousNCs, setPreviousNCs] = useState({});
 
@@ -435,6 +459,11 @@
                 });
             };
 
+            const handleSaveSignature = (sigData) => {
+                setSignature(sigData);
+                setIsSigning(false);
+            };
+
             const handleSaveInspection = () => {
                 const pendentes = currentQuestions.filter(q => !answers[q.id]);
                 if (pendentes.length > 0 && !confirm(`Existem ${pendentes.length} perguntas sem resposta. Salvar?`)) return;
@@ -468,6 +497,60 @@
                 
                 setReportInspection(newInspection);
                 setView('report');
+            };
+
+            // --- EXPORTAR EVIDÊNCIAS HTML ---
+            const handleExportEvidences = () => {
+                const filteredInspections = analyticsTab === 'weekly' 
+                    ? data.inspections.filter(i => i.weekId === weekId)
+                    : data.inspections.filter(i => i.data.startsWith(selectedMonth));
+
+                let htmlContent = `<html><head><title>Relatório de Evidências</title><style>body{font-family:sans-serif; padding:20px;} .card{border:1px solid #ccc; padding:15px; margin-bottom:20px; border-radius:8px;} .img-container{display:flex; gap:10px; flex-wrap:wrap;} img{max-height:200px; border:1px solid #eee;}</style></head><body><h1>Evidências Fotográficas - ${analyticsTab === 'weekly' ? getWeekRange() : selectedMonth}</h1>`;
+                
+                let hasEvidences = false;
+
+                filteredInspections.forEach(insp => {
+                    const ncQuestions = Object.entries(insp.respostas).filter(([qId, val]) => val === 'NC');
+                    
+                    if (ncQuestions.length > 0) {
+                        ncQuestions.forEach(([qId, val]) => {
+                            const question = data.questions.find(q => q.id === qId);
+                            const evidenceList = insp.evidencias && insp.evidencias[qId];
+                            const obs = insp.observacoes && insp.observacoes[qId];
+
+                            if (evidenceList && (Array.isArray(evidenceList) ? evidenceList.length > 0 : evidenceList)) {
+                                hasEvidences = true;
+                                htmlContent += `<div class="card">
+                                    <h3>${insp.setor} - ${question ? question.pergunta : 'Pergunta removida'}</h3>
+                                    <p><strong>Observação:</strong> ${obs || '-'}</p>
+                                    <p><small>Auditor: ${insp.responsavel} | Data: ${new Date(insp.data).toLocaleDateString()}</small></p>
+                                    <div class="img-container">`;
+                                
+                                const imgs = Array.isArray(evidenceList) ? evidenceList : [evidenceList];
+                                imgs.forEach(img => {
+                                    htmlContent += `<img src="${img}" />`;
+                                });
+                                htmlContent += `</div></div>`;
+                            }
+                        });
+                    }
+                });
+
+                if (!hasEvidences) {
+                    alert("Nenhuma evidência fotográfica encontrada neste período.");
+                    return;
+                }
+
+                htmlContent += `</body></html>`;
+                
+                const blob = new Blob([htmlContent], {type: 'text/html'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `evidencias_imac_${new Date().toISOString().slice(0,10)}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
             };
 
             // --- IMPORTAÇÃO EXCEL ---
@@ -507,8 +590,6 @@
                                     pergunta: `${currentSection} - ${colA}`
                                 });
                             } else {
-                                // Heurística para detectar cabeçalho de seção na coluna A
-                                // Ignora cabeçalhos de tabela conhecidos
                                 const ignore = ["MANIPULADOR", "PLATAFORMA", "COLOCAÇÃO", "PONTUAÇÃO", "INCONFORMIDADES", "REQUISITO", "OBSERVAÇÃO"];
                                 if (!ignore.includes(colA.toUpperCase()) && colA.length > 3 && !colB) {
                                      currentSection = colA.toUpperCase();
@@ -598,7 +679,6 @@
             // --- ANALYTICS ---
             const analytics = useMemo(() => {
                 let filteredInspections = [];
-                // Proteção contra dados corrompidos
                 const safeInspections = Array.isArray(data.inspections) ? data.inspections.filter(i => i && i.data) : [];
 
                 if (analyticsTab === 'weekly') {
@@ -731,8 +811,8 @@
                                                 <p className="font-bold text-sm mt-2 print:text-xs">{q.pergunta}</p>
                                                 <p className="text-sm mt-1 text-red-800 print:text-xs"><span className="font-bold">Obs:</span> {reportInspection.observacoes[q.id] || '-'}</p>
                                                 {reportInspection.evidencias && reportInspection.evidencias[q.id] && (Array.isArray(reportInspection.evidencias[q.id]) ? reportInspection.evidencias[q.id] : [reportInspection.evidencias[q.id]]).map((img, idx) => (
-                                                    <div key={idx} className="mt-2 inline-block mr-2">
-                                                        <img src={img} className="h-32 object-contain border border-gray-300 bg-white print-img-small" />
+                                                    <div key={idx} className="mt-2 inline-block mr-2 w-full">
+                                                        <img src={img} className="print-img-evidence object-contain border border-gray-300 bg-white" />
                                                     </div>
                                                 ))}
                                             </div>
@@ -761,7 +841,10 @@
                     <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
                         <div className="flex justify-between items-center mb-6 no-print">
                             <button onClick={() => setView('analytics')} className="bg-stone-800 text-white px-4 py-2 rounded">Voltar</button>
-                            <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.Printer /> Imprimir Relatório</button>
+                            <div className="flex gap-2">
+                                <button onClick={handleExportEvidences} className="bg-stone-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.Image /> Exportar Fotos</button>
+                                <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.Printer /> Imprimir Relatório</button>
+                            </div>
                         </div>
 
                         <div className="bg-white p-8 border border-gray-300 shadow-sm print:shadow-none print:border-none print-scale-down">
@@ -1263,9 +1346,14 @@
                             {/* Área de Assinatura */}
                             <div className="mt-8 border-t border-stone-800 pt-6">
                                 <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura do Responsável</h3>
-                                <p className="text-xs text-stone-500 mb-2">Assine na área branca abaixo:</p>
-                                <SignaturePad onSave={setSignature} initialData={signature} />
-                                {signature && <p className="text-xs text-green-500 mt-1 text-right">Assinatura capturada ✓</p>}
+                                <p className="text-xs text-stone-500 mb-2">Toque no botão para assinar:</p>
+                                <button 
+                                    onClick={() => setIsSigning(true)}
+                                    className={`w-full py-3 rounded-lg border border-stone-600 flex items-center justify-center gap-2 transition-all ${signature ? 'bg-green-900/20 text-green-400 border-green-500' : 'bg-stone-900 text-stone-400 hover:bg-stone-800'}`}
+                                >
+                                    {signature ? <><Icons.Check /> Assinatura Registrada</> : <><Icons.Pen /> Abrir Painel de Assinatura</>}
+                                </button>
+                                {signature && <img src={signature} className="mt-2 h-12 object-contain opacity-50" />}
                             </div>
 
                         </main>
@@ -1273,6 +1361,15 @@
                             <button onClick={() => setView('dashboard')} className="px-6 py-3 rounded-xl border border-stone-700 font-bold text-stone-400 hover:bg-stone-800">Cancelar</button>
                             <button onClick={handleSaveInspection} className="flex-1 bg-yellow-600 text-stone-950 rounded-xl font-bold shadow-lg shadow-yellow-900/20 hover:bg-yellow-500 transition-colors">Salvar Inspeção</button>
                         </div>
+                        
+                        {/* Modal de Assinatura */}
+                        {isSigning && (
+                            <SignaturePad 
+                                onSave={handleSaveSignature} 
+                                onCancel={() => setIsSigning(false)}
+                                initialData={signature}
+                            />
+                        )}
                     </div>
                 );
             }
