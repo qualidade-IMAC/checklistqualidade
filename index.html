@@ -25,7 +25,7 @@
         .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.05); }
         .modal-overlay { background-color: rgba(0, 0, 0, 0.5); }
         
-        /* Configurações de Impressão (PDF) - OTIMIZADO PARA 1 PÁGINA */
+        /* Configurações de Impressão (PDF) - OTIMIZADO */
         @media print {
             @page { size: A4; margin: 5mm; }
             
@@ -51,7 +51,6 @@
                 max-width: none !important;
                 padding: 0 !important;
                 margin: 0 !important;
-                zoom: 0.85;
             }
 
             .print-border { border: 1px solid #ddd !important; padding: 10px !important; border-radius: 4px; }
@@ -64,6 +63,7 @@
             
             .no-break { break-inside: avoid; page-break-inside: avoid; }
             .print-img-small { height: 60px !important; width: auto !important; }
+            .print-img-evidence { max-height: 100px !important; width: auto !important; max-width: 100% !important; }
             
             ::-webkit-scrollbar { display: none; }
         }
@@ -79,7 +79,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- DADOS PADRÃO (Atualizados com prefixos) ---
+        // --- DADOS PADRÃO ---
         const STATIC_DB_PERGUNTAS = [
             { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Manipuladores com fardamento completo e conservado?" },
             { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Higiene pessoal adequada (unhas curtas, barba feita)?" },
@@ -89,7 +89,6 @@
             { id: "def_6", setor: "PRE_PESAGEM", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Uso correto de EPIs?" },
             { id: "def_7", setor: "PRE_PESAGEM", grupo: "GERAL", pergunta: "SETOR GERAL - Bancadas limpas e organizadas?" },
             { id: "def_8", setor: "PRE_PESAGEM", grupo: "CLIMA", pergunta: "CLIMATIZAÇÃO - Temperatura entre 17º e 20ºC?" },
-            // ... (Exemplo simplificado para inicialização)
         ];
 
         // --- ÍCONES ---
@@ -251,7 +250,6 @@
             const stopDrawing = () => {
                 if (isDrawing) {
                     setIsDrawing(false);
-                    // Não salva automaticamente, usuário deve confirmar
                 }
             };
 
@@ -305,7 +303,7 @@
             const [obs, setObs] = useState({});
             const [evidences, setEvidences] = useState({}); 
             const [signature, setSignature] = useState(null);
-            const [isSigning, setIsSigning] = useState(false); // Novo estado para modal de assinatura
+            const [isSigning, setIsSigning] = useState(false);
             const [editingInspectionId, setEditingInspectionId] = useState(null);
             const [previousNCs, setPreviousNCs] = useState({});
 
@@ -500,60 +498,6 @@
                 
                 setReportInspection(newInspection);
                 setView('report');
-            };
-
-            // --- EXPORTAR EVIDÊNCIAS HTML ---
-            const handleExportEvidences = () => {
-                const filteredInspections = analyticsTab === 'weekly' 
-                    ? data.inspections.filter(i => i.weekId === weekId)
-                    : data.inspections.filter(i => i.data.startsWith(selectedMonth));
-
-                let htmlContent = `<html><head><title>Relatório de Evidências</title><style>body{font-family:sans-serif; padding:20px;} .card{border:1px solid #ccc; padding:15px; margin-bottom:20px; border-radius:8px;} .img-container{display:flex; gap:10px; flex-wrap:wrap;} img{max-height:200px; border:1px solid #eee;}</style></head><body><h1>Evidências Fotográficas - ${analyticsTab === 'weekly' ? getWeekRange() : selectedMonth}</h1>`;
-                
-                let hasEvidences = false;
-
-                filteredInspections.forEach(insp => {
-                    const ncQuestions = Object.entries(insp.respostas).filter(([qId, val]) => val === 'NC');
-                    
-                    if (ncQuestions.length > 0) {
-                        ncQuestions.forEach(([qId, val]) => {
-                            const question = data.questions.find(q => q.id === qId);
-                            const evidenceList = insp.evidencias && insp.evidencias[qId];
-                            const obs = insp.observacoes && insp.observacoes[qId];
-
-                            if (evidenceList && (Array.isArray(evidenceList) ? evidenceList.length > 0 : evidenceList)) {
-                                hasEvidences = true;
-                                htmlContent += `<div class="card">
-                                    <h3>${insp.setor} - ${question ? question.pergunta : 'Pergunta removida'}</h3>
-                                    <p><strong>Observação:</strong> ${obs || '-'}</p>
-                                    <p><small>Auditor: ${insp.responsavel} | Data: ${new Date(insp.data).toLocaleDateString()}</small></p>
-                                    <div class="img-container">`;
-                                
-                                const imgs = Array.isArray(evidenceList) ? evidenceList : [evidenceList];
-                                imgs.forEach(img => {
-                                    htmlContent += `<img src="${img}" />`;
-                                });
-                                htmlContent += `</div></div>`;
-                            }
-                        });
-                    }
-                });
-
-                if (!hasEvidences) {
-                    alert("Nenhuma evidência fotográfica encontrada neste período.");
-                    return;
-                }
-
-                htmlContent += `</body></html>`;
-                
-                const blob = new Blob([htmlContent], {type: 'text/html'});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `evidencias_imac_${new Date().toISOString().slice(0,10)}.html`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
             };
 
             // --- IMPORTAÇÃO EXCEL ---
@@ -762,7 +706,7 @@
 
                 const summaryText = `Neste período (${analyticsTab === 'weekly' ? 'Semana' : 'Mês'}), foram realizadas ${totalInspections} inspeções, resultando em uma média global de ${avgScore}%. O setor com melhor desempenho foi "${bestSector}", enquanto "${worstSector}" apresentou os menores índices. A principal categoria de não conformidades foi "${mainIssue}".`;
 
-                return { avgScore, avgBonusScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText };
+                return { avgScore, avgBonusScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText, filteredInspections };
             }, [data.inspections, data.questions, weekId, analyticsTab, selectedMonth]);
 
             
@@ -845,7 +789,6 @@
                         <div className="flex justify-between items-center mb-6 no-print">
                             <button onClick={() => setView('analytics')} className="bg-stone-200 text-stone-800 px-4 py-2 rounded font-bold border border-stone-300 hover:bg-stone-300">Voltar</button>
                             <div className="flex gap-2">
-                                <button onClick={handleExportEvidences} className="bg-stone-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-stone-700"><Icons.Image /> Exportar Fotos</button>
                                 <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Icons.Printer /> Imprimir Relatório</button>
                             </div>
                         </div>
@@ -906,10 +849,54 @@
                                 </div>
                             </div>
 
-                            <div className="mb-12 print:mb-4 no-break">
+                            <div className="mb-8 print:mb-4 no-break">
                                 <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">4. Plano de Ação (Supervisão)</h2>
                                 <textarea className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..." value={actionPlan} onChange={e => setActionPlan(e.target.value)} />
                                 <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[5rem] print:text-xs">{actionPlan || "Nenhuma observação registrada."}</div>
+                            </div>
+
+                            <div className="mb-12 print:mb-4 no-break">
+                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">5. Registro Fotográfico (Evidências de NC)</h2>
+                                {analytics.filteredInspections.map(insp => {
+                                    // Filtra questões que são NC E que têm fotos
+                                    const ncWithPhotos = Object.entries(insp.evidencias || {}).filter(([qId, photos]) => 
+                                        insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos)
+                                    );
+
+                                    if (ncWithPhotos.length === 0) return null;
+
+                                    return (
+                                        <div key={insp.id} className="mb-6 break-inside-avoid border-b border-gray-100 pb-4">
+                                            <h3 className="font-bold text-sm bg-gray-100 p-2 rounded border border-gray-200 flex justify-between items-center print:text-xs">
+                                                <span>{insp.setor}</span>
+                                                <span className="font-normal text-xs text-gray-500">{new Date(insp.data).toLocaleDateString()} - {insp.responsavel}</span>
+                                            </h3>
+                                            <div className="mt-2 space-y-4">
+                                                {ncWithPhotos.map(([qId, photos]) => {
+                                                    const question = data.questions.find(q => q.id === qId);
+                                                    const obs = insp.observacoes[qId];
+                                                    const imgList = Array.isArray(photos) ? photos : [photos];
+                                                    return (
+                                                        <div key={qId} className="pl-4 border-l-2 border-red-300">
+                                                            <p className="text-xs font-bold text-red-700">{question ? question.pergunta : 'Pergunta removida'}</p>
+                                                            <p className="text-xs text-gray-600 mb-2 print:text-[10px]"><span className="font-bold">Obs:</span> {obs || '-'}</p>
+                                                            <div className="flex gap-2 flex-wrap">
+                                                                {imgList.map((img, i) => (
+                                                                    <img key={i} src={img} className="h-32 border border-gray-300 p-1 bg-white object-contain print:h-24" />
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                                {analytics.filteredInspections.every(insp => 
+                                    Object.entries(insp.evidencias || {}).every(([qId, photos]) => 
+                                        !(insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos))
+                                    )
+                                ) && <p className="text-sm italic text-gray-500 text-center py-4">Nenhuma evidência fotográfica registrada para Não Conformidades neste período.</p>}
                             </div>
 
                             <div className="mt-16 flex justify-end print:mt-8 no-break">
