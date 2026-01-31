@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMAC - Controle de Qualidade</title>
+    <title>IMAC - Gestão de Qualidade PRO</title>
     
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -644,6 +644,79 @@
                 reader.readAsDataURL(file);
             };
 
+            const handleDownloadBackup = async () => {
+                try {
+                    const inspections = await IDB.getAllInspections();
+                    const questions = await IDB.getConfig('questions');
+                    const logo = await IDB.getConfig('logo');
+                    const backupData = {
+                        version: 1,
+                        timestamp: new Date().toISOString(),
+                        inspections,
+                        questions,
+                        logo
+                    };
+                    
+                    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `backup_imac_${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                    const now = new Date().toISOString();
+                    await IDB.setConfig('lastBackup', now);
+                    setLastBackup(now);
+                    toast("Backup realizado com sucesso!");
+                } catch (e) {
+                    console.error(e);
+                    toast("Erro ao gerar backup.", 'error');
+                }
+            };
+
+            const handleRestoreBackup = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (!data.inspections || !Array.isArray(data.inspections)) {
+                            throw new Error("Formato inválido");
+                        }
+                        
+                        if (confirm(`Restaurar backup de ${new Date(data.timestamp).toLocaleString()}? Isso substituirá os dados atuais.`)) {
+                            // Restore Questions
+                            if (data.questions) {
+                                await IDB.setConfig('questions', data.questions);
+                                setQuestions(data.questions);
+                            }
+                            
+                            // Restore Logo
+                            if (data.logo) {
+                                await IDB.setConfig('logo', data.logo);
+                                setLogo(data.logo);
+                            }
+                            
+                            // Restore Inspections
+                            for (const insp of data.inspections) {
+                                await IDB.saveInspection(insp);
+                            }
+                            
+                            setInspections(await IDB.getAllInspections());
+                            toast("Dados restaurados com sucesso!");
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        toast("Erro ao restaurar backup. Arquivo inválido.", 'error');
+                    }
+                };
+                reader.readAsText(file);
+            };
+
             // --- Lógica de Filtro Busca Inteligente ---
             const filteredInspectionQuestions = useMemo(() => {
                 if (!inspectionSearch) return currentQuestions;
@@ -895,6 +968,15 @@
                                 {settingsTab === 'system' && (
                                     <div className="space-y-6 animate-fade-in">
                                         <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+                                            <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.Database /> Backup e Restauração</h2>
+                                            <div className="mb-4 text-xs text-stone-500 bg-stone-50 p-3 rounded border border-stone-200"><p>Último Backup: <strong className="text-yellow-600">{lastBackup ? new Date(lastBackup).toLocaleString() : "Nunca realizado"}</strong></p></div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <button onClick={handleDownloadBackup} className="flex flex-col items-center justify-center p-3 bg-white border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 hover:text-yellow-600 transition-all active:scale-95"><Icons.Download /><span className="text-xs font-bold mt-2">Baixar Backup JSON</span></button>
+                                                <label className="flex flex-col items-center justify-center p-3 bg-white border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 hover:text-green-600 transition-all cursor-pointer active:scale-95"><Icons.Upload /><span className="text-xs font-bold mt-2">Restaurar Backup</span><input type="file" accept=".json" className="hidden" onChange={handleRestoreBackup} /></label>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
                                             <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.Excel /> Exportação de Dados</h2>
                                             <p className="text-xs text-stone-500 mb-4">Baixe todos os dados para analisar no Excel.</p>
                                             <button onClick={handleExportCSV} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 flex items-center justify-center gap-2"><Icons.Download /> Baixar CSV / Excel</button>
@@ -1078,177 +1160,6 @@
 
                                     <div className="flex gap-2 pt-2"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 border rounded-lg font-bold">Cancelar</button><button type="submit" className="flex-1 py-3 bg-yellow-500 text-white rounded-lg font-bold">Salvar</button></div>
                                 </form>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* VIEW: REPORT (PDF) */}
-                    {view === 'report' && reportInspection && (
-                        <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
-                            <div className="flex justify-between items-center mb-6 no-print">
-                                <button onClick={() => setView('dashboard')} className="bg-stone-200 px-4 py-2 rounded font-bold">Voltar</button>
-                                <button onClick={() => window.print()} className="bg-yellow-500 text-white font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.List /> Imprimir</button>
-                            </div>
-                            <div className="border border-gray-300 p-8 print-border">
-                                <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
-                                    <div><h1 className="text-2xl font-bold uppercase">Relatório de Inspeção</h1><p className="text-sm text-gray-600">Gestão de Qualidade IMAC</p></div>
-                                    {logo && <img src={logo} className="h-12 object-contain print-img-small" />}
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-                                    <div><span className="font-bold">Setor:</span> {reportInspection.setor}</div>
-                                    <div><span className="font-bold">Data:</span> {new Date(reportInspection.data).toLocaleDateString()}</div>
-                                    <div><span className="font-bold">Auditor:</span> {reportInspection.responsavel}</div>
-                                    <div><span className="font-bold">Nota:</span> {reportInspection.score}%</div>
-                                </div>
-                                <div className="mb-8">
-                                    <h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Não Conformidades</h3>
-                                    <div className="space-y-4 print-grid-2">
-                                        {Object.entries(reportInspection.respostas).filter(([_, v]) => v === 'NC').map(([qid, _]) => {
-                                            const q = questions.find(qu => qu.id === qid);
-                                            return (
-                                                <div key={qid} className="border border-red-100 bg-red-50 p-3 rounded no-break">
-                                                    <p className="font-bold text-sm text-red-700">{q?.pergunta}</p>
-                                                    <p className="text-sm mt-1 text-gray-800"><span className="font-bold">Obs:</span> {reportInspection.observacoes[qid] || '-'}</p>
-                                                    {reportInspection.evidencias && reportInspection.evidencias[qid] && (Array.isArray(reportInspection.evidencias[qid]) ? reportInspection.evidencias[qid] : [reportInspection.evidencias[qid]]).map((img, i) => (
-                                                        <img key={i} src={img} className="mt-2 h-24 border bg-white object-contain print-img-evidence" />
-                                                    ))}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    {Object.values(reportInspection.respostas).every(v => v !== 'NC') && <p className="italic text-gray-500">Nenhuma não conformidade.</p>}
-                                </div>
-                                <div className="mb-8 no-break">
-                                    <h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Plano de Ação Sugerido</h3>
-                                    <div className="p-4 border rounded bg-gray-50 whitespace-pre-wrap text-sm">{actionPlan}</div>
-                                </div>
-                                <div className="mt-12 flex justify-between items-end no-break">
-                                    <div className="text-center w-1/3"><p className="font-bold text-sm mb-8">{reportInspection.responsavel}</p><div className="border-t border-black pt-1 text-xs">Auditor</div></div>
-                                    <div className="text-center w-1/3">{reportInspection.assinatura && <img src={reportInspection.assinatura} className="h-12 mx-auto mb-2 print-img-small" />}<div className="border-t border-black pt-1 text-xs">Responsável Setor</div></div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* VIEW: MANAGEMENT REPORT */}
-                    {view === 'management_report' && (
-                        <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
-                            <div className="flex justify-between items-center mb-6 no-print">
-                                <button onClick={() => setView('analytics')} className="bg-stone-200 text-stone-800 px-4 py-2 rounded font-bold border border-stone-300 hover:bg-stone-300">Voltar</button>
-                                <div className="flex gap-2">
-                                    <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Icons.Printer /> Imprimir Relatório</button>
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-8 border border-gray-300 shadow-sm print:shadow-none print:border-none print-scale-down">
-                                <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8 print:mb-4 print:pb-2">
-                                    <div><h1 className="text-3xl font-bold uppercase tracking-tight print:text-xl">Relatório Gerencial</h1><p className="text-sm text-gray-500 uppercase tracking-widest mt-1 print:text-xs">Indicadores de Qualidade - IMAC</p></div>
-                                    {logo && <img src={logo} className="h-16 object-contain print-img-small" />}
-                                </div>
-
-                                <div className="flex justify-between mb-8 text-sm bg-gray-50 p-4 rounded border border-gray-200 print:mb-4 print:p-2 print:text-xs">
-                                    <div><strong>Período:</strong> {analyticsTab === 'weekly' ? 'Semanal (' + getWeekRange() + ')' : 'Mensal (' + selectedMonth + ')'}</div>
-                                    <div><strong>Emissão:</strong> {new Date().toLocaleDateString()}</div>
-                                </div>
-
-                                <div className="mb-8 print:mb-4">
-                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">1. Resumo Executivo</h2>
-                                    <p className="text-justify leading-relaxed text-gray-800 print:text-xs">{analytics.summaryText}</p>
-                                </div>
-
-                                <div className="grid grid-cols-4 gap-4 mb-8 text-center print:mb-4 print:gap-2">
-                                    <div className="p-4 border rounded bg-gray-50 print:p-2">
-                                        <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.avgScore}%</div>
-                                        <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Média Geral</div>
-                                    </div>
-                                    <div className="p-4 border rounded bg-yellow-50 border-yellow-200 print:p-2">
-                                        <div className="text-3xl font-black text-yellow-800 print:text-xl">{analytics.avgBonusScore}%</div>
-                                        <div className="text-xs uppercase text-yellow-800 font-bold mt-1 print:text-[10px]">Média Gratificação</div>
-                                    </div>
-                                    <div className="p-4 border rounded bg-gray-50 print:p-2">
-                                        <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.ranking.length}</div>
-                                        <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Inspeções</div>
-                                    </div>
-                                    <div className="p-4 border rounded bg-gray-50 print:p-2">
-                                        <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.pieCategory.length > 0 ? analytics.pieCategory[0].value : 0}</div>
-                                        <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Maior Incidência (NC)</div>
-                                    </div>
-                                </div>
-
-                                <div className="print-grid-2">
-                                    <div className="grid grid-cols-2 gap-8 mb-8 print:mb-4 print:gap-4 no-break">
-                                        <div>
-                                            <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-green-700 print:text-xs">Top 3 - Melhores</h2>
-                                            <ul className="text-sm space-y-2 print:text-xs">{analytics.ranking.slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><span className="font-bold">{r.score}%</span></li>))}</ul>
-                                        </div>
-                                        <div>
-                                            <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-red-700 print:text-xs">Atenção - Menores</h2>
-                                            <ul className="text-sm space-y-2 print:text-xs">{[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><span className="font-bold text-red-600">{r.score}%</span></li>))}</ul>
-                                        </div>
-                                    </div>
-
-                                    <div className="mb-8 print:mb-4 no-break">
-                                        <h2 className="text-lg font-bold border-b border-gray-300 mb-4 pb-1 uppercase text-gray-700 print:text-sm">3. Análise de Ocorrências</h2>
-                                        <div className="grid grid-cols-2 gap-8 print:gap-2">
-                                            <div><h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Categoria</h4><div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2"><PieChart data={analytics.pieCategory} isReport={true} /></div></div>
-                                            <div><h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Setor</h4><div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2"><PieChart data={analytics.pieSector} isReport={true} /></div></div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="mb-8 print:mb-4 no-break">
-                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">4. Plano de Ação (Supervisão)</h2>
-                                    <textarea className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..." value={actionPlan} onChange={e => setActionPlan(e.target.value)} />
-                                    <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[5rem] print:text-xs">{actionPlan || "Nenhuma observação registrada."}</div>
-                                </div>
-
-                                <div className="mb-12 print:mb-4 no-break">
-                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">5. Registro Fotográfico (Evidências de NC)</h2>
-                                    {analytics.filteredInspections.map(insp => {
-                                        // Filtra questões que são NC E que têm fotos
-                                        const ncWithPhotos = Object.entries(insp.evidencias || {}).filter(([qId, photos]) => 
-                                            insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos)
-                                        );
-
-                                        if (ncWithPhotos.length === 0) return null;
-
-                                        return (
-                                            <div key={insp.id} className="mb-6 break-inside-avoid border-b border-gray-100 pb-4">
-                                                <h3 className="font-bold text-sm bg-gray-100 p-2 rounded border border-gray-200 flex justify-between items-center print:text-xs">
-                                                    <span>{insp.setor}</span>
-                                                    <span className="font-normal text-xs text-gray-500">{new Date(insp.data).toLocaleDateString()} - {insp.responsavel}</span>
-                                                </h3>
-                                                <div className="mt-2 space-y-4">
-                                                    {ncWithPhotos.map(([qId, photos]) => {
-                                                        const question = questions.find(q => q.id === qId);
-                                                        const obs = insp.observacoes[qId];
-                                                        const imgList = Array.isArray(photos) ? photos : [photos];
-                                                        return (
-                                                            <div key={qId} className="pl-4 border-l-2 border-red-300">
-                                                                <p className="text-xs font-bold text-red-700">{question ? question.pergunta : 'Pergunta removida'}</p>
-                                                                <p className="text-xs text-gray-600 mb-2 print:text-[10px]"><span className="font-bold">Obs:</span> {obs || '-'}</p>
-                                                                <div className="flex gap-2 flex-wrap">
-                                                                    {imgList.map((img, i) => (
-                                                                        <img key={i} src={img} className="h-32 border border-gray-300 p-1 bg-white object-contain print:h-24" />
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        )
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
-                                    {analytics.filteredInspections.every(insp => 
-                                        Object.entries(insp.evidencias || {}).every(([qId, photos]) => 
-                                            !(insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos))
-                                        )
-                                    ) && <p className="text-sm italic text-gray-500 text-center py-4">Nenhuma evidência fotográfica registrada para Não Conformidades neste período.</p>}
-                                </div>
-
-                                <div className="mt-16 flex justify-end print:mt-8 no-break">
-                                    <div className="text-center w-1/3"><div className="border-t border-black pt-2 font-bold text-sm print:text-xs">Supervisão da Qualidade</div><div className="text-xs text-gray-500">{new Date().toLocaleDateString()}</div></div>
-                                </div>
                             </div>
                         </div>
                     )}
