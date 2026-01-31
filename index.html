@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IMAC - Gestão Semanal</title>
+    <title>IMAC - Controle de Qualidade</title>
     
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -11,87 +11,121 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- SheetJS para ler Excel -->
+    <!-- SheetJS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
-        body { -webkit-tap-highlight-color: transparent; background-color: #f5f5f4; color: #000000; } /* stone-950 */
+        body { -webkit-tap-highlight-color: transparent; background-color: #f5f5f4; color: #1c1917; }
         
-        .custom-scrollbar::-webkit-scrollbar { height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ca8a04; }
-
-        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.05); }
-        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #a8a29e; border-radius: 4px; }
         
-        /* Configurações de Impressão (PDF) - OTIMIZADO */
-        @media print {
-            @page { size: A4; margin: 5mm; }
-            
-            body { 
-                background-color: white; 
-                color: black; 
-                font-family: sans-serif; 
-                -webkit-print-color-adjust: exact !important; 
-                print-color-adjust: exact !important;
-                font-size: 10pt;
-            }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); }
+        
+        /* Toast Animations */
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .toast-enter { animation: slideIn 0.3s ease-out forwards; }
 
+        @media print {
+            @page { size: A4; margin: 10mm; }
+            body { background-color: white; color: black; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; font-size: 10pt; }
             .no-print { display: none !important; }
             .print-only { display: block !important; }
-
-            .bg-stone-900, .bg-stone-950, .bg-white { background-color: white !important; border: none !important; color: black !important; }
-            .text-stone-100, .text-stone-200, .text-stone-300, .text-stone-400, .text-stone-500 { color: black !important; }
-            .border-stone-800, .border-stone-700 { border-color: #ccc !important; }
-            .shadow-lg, .shadow-sm { box-shadow: none !important; }
-            
-            .print-container {
-                width: 100% !important;
-                max-width: none !important;
-                padding: 0 !important;
-                margin: 0 !important;
-            }
-
+            .print-container { width: 100% !important; max-width: none !important; padding: 0 !important; margin: 0 !important; zoom: 0.9; }
             .print-border { border: 1px solid #ddd !important; padding: 10px !important; border-radius: 4px; }
-            
-            .print-grid-2 { 
-                display: grid; 
-                grid-template-columns: 1fr 1fr; 
-                gap: 10px; 
-            }
-            
+            .print-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
             .no-break { break-inside: avoid; page-break-inside: avoid; }
-            .print-img-small { height: 60px !important; width: auto !important; }
-            .print-img-evidence { max-height: 100px !important; width: auto !important; max-width: 100% !important; }
-            
-            ::-webkit-scrollbar { display: none; }
+            .print-img-small { height: 50px !important; width: auto !important; }
+            .print-img-evidence { max-height: 120px !important; width: auto !important; max-width: 100% !important; border: 1px solid #eee; }
         }
-
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-stone-100 text-stone-950 font-sans">
+<body class="bg-stone-100 text-stone-950 font-sans antialiased">
 
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        // --- CONFIGURAÇÃO INDEXEDDB (BANCO DE DADOS ROBUSTO) ---
+        const DB_NAME = 'IMAC_QUALITY_DB';
+        const DB_VERSION = 1;
+        
+        const IDB = {
+            open: () => {
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open(DB_NAME, DB_VERSION);
+                    req.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('config')) db.createObjectStore('config'); // Perguntas, Logo, Settings
+                        if (!db.objectStoreNames.contains('inspections')) db.createObjectStore('inspections', { keyPath: 'id' }); // Inspeções
+                    };
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            },
+            getConfig: async (key) => {
+                const db = await IDB.open();
+                return new Promise((resolve) => {
+                    const tx = db.transaction('config', 'readonly');
+                    const req = tx.objectStore('config').get(key);
+                    req.onsuccess = () => resolve(req.result);
+                });
+            },
+            setConfig: async (key, val) => {
+                const db = await IDB.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction('config', 'readwrite');
+                    tx.objectStore('config').put(val, key);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            },
+            getAllInspections: async () => {
+                const db = await IDB.open();
+                return new Promise((resolve) => {
+                    const tx = db.transaction('inspections', 'readonly');
+                    const req = tx.objectStore('inspections').getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                });
+            },
+            saveInspection: async (inspection) => {
+                const db = await IDB.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction('inspections', 'readwrite');
+                    tx.objectStore('inspections').put(inspection);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            },
+            deleteInspection: async (id) => {
+                const db = await IDB.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction('inspections', 'readwrite');
+                    tx.objectStore('inspections').delete(id);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+        };
 
         // --- DADOS PADRÃO ---
         const STATIC_DB_PERGUNTAS = [
-            { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Manipuladores com fardamento completo e conservado?" },
-            { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Higiene pessoal adequada (unhas curtas, barba feita)?" },
-            { id: "def_3", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Setor limpo (piso/parede/teto/portas)?" },
-            { id: "def_4", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Produtos organizados e identificados (PVPS)?" },
-            { id: "def_5", setor: "ESTOQUE", grupo: "CÂMARA", pergunta: "CÂMARA - Temperaturas adequadas e registradas?" },
-            { id: "def_6", setor: "PRE_PESAGEM", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Uso correto de EPIs?" },
-            { id: "def_7", setor: "PRE_PESAGEM", grupo: "GERAL", pergunta: "SETOR GERAL - Bancadas limpas e organizadas?" },
-            { id: "def_8", setor: "PRE_PESAGEM", grupo: "CLIMA", pergunta: "CLIMATIZAÇÃO - Temperatura entre 17º e 20ºC?" },
+            { id: "def_1", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Manipuladores com fardamento completo e conservado?", critical: false, weight: 1 },
+            { id: "def_2", setor: "ESTOQUE", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Higiene pessoal adequada (unhas curtas, barba feita)?", critical: false, weight: 1 },
+            { id: "def_3", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Setor limpo (piso/parede/teto/portas)?", critical: true, weight: 3 }, // Crítico, peso 3
+            { id: "def_4", setor: "ESTOQUE", grupo: "GERAL", pergunta: "SETOR GERAL - Produtos organizados e identificados (PVPS)?", critical: true, weight: 3 }, // Crítico, peso 3
+            { id: "def_5", setor: "ESTOQUE", grupo: "CÂMARA", pergunta: "CÂMARA - Temperaturas adequadas e registradas?", critical: true, weight: 3 }, // Crítico, peso 3
+            { id: "def_6", setor: "PRE_PESAGEM", grupo: "MANIPULADOR", pergunta: "MANIPULADOR - Uso correto de EPIs?", critical: false, weight: 1 },
+            { id: "def_7", setor: "PRE_PESAGEM", grupo: "GERAL", pergunta: "SETOR GERAL - Bancadas limpas e organizadas?", critical: false, weight: 1 },
+            { id: "def_8", setor: "PRE_PESAGEM", grupo: "CLIMA", pergunta: "CLIMATIZAÇÃO - Temperatura entre 17º e 20ºC?", critical: false, weight: 1 },
         ];
 
-        // --- ÍCONES ---
+        // --- ÍCONES SVG ---
         const Icons = {
             Check: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>,
             List: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>,
@@ -112,8 +146,7 @@
             Printer: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>,
             FileText: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
             History: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
-            FileX: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 6-6"/><path d="m15 15-6-6"/></svg>,
-            XCircle: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            Excel: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="16" y1="8" x2="8" y2="16"/><line x1="8" y1="8" x2="16" y2="16"/></svg>
         };
 
         const getWeekID = (dateStr) => {
@@ -137,28 +170,40 @@
             return `${firstday} até ${lastday}`;
         }
 
-        // --- SISTEMA DE ARMAZENAMENTO LOCAL ---
-        const Storage = {
-            KEY: 'imac_offline_data',
-            get: () => {
-                try {
-                    const data = localStorage.getItem(Storage.KEY);
-                    return data ? JSON.parse(data) : { questions: [], inspections: [], lastBackup: null, logo: null };
-                } catch(e) { return { questions: [], inspections: [], lastBackup: null, logo: null }; }
-            },
-            set: (data) => {
-                localStorage.setItem(Storage.KEY, JSON.stringify(data));
-            },
-            reset: () => {
-                const initialData = { 
-                    questions: STATIC_DB_PERGUNTAS, 
-                    inspections: [],
-                    lastBackup: null,
-                    logo: null
-                };
-                Storage.set(initialData);
-                return initialData;
-            }
+        // --- COMPONENTE TOAST (Notificações) ---
+        const ToastContext = React.createContext();
+        const ToastProvider = ({ children }) => {
+            const [toasts, setToasts] = useState([]);
+            const addToast = (msg, type = 'success') => {
+                const id = Date.now();
+                setToasts(prev => [...prev, { id, msg, type }]);
+                setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+            };
+            return (
+                <ToastContext.Provider value={addToast}>
+                    {children}
+                    <div className="fixed top-4 right-4 z-50 space-y-2">
+                        {toasts.map(t => (
+                            <div key={t.id} className={`toast-enter p-4 rounded-lg shadow-xl text-white font-bold flex items-center gap-2 ${t.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
+                                {t.type === 'success' ? <Icons.Check /> : <Icons.Alert />}
+                                {t.msg}
+                            </div>
+                        ))}
+                    </div>
+                </ToastContext.Provider>
+            );
+        };
+        const useToast = () => React.useContext(ToastContext);
+
+        // --- COMPONENTE LIGHTBOX ---
+        const Lightbox = ({ src, onClose }) => {
+            if (!src) return null;
+            return (
+                <div className="fixed inset-0 z-[60] bg-black bg-opacity-90 flex items-center justify-center p-4" onClick={onClose}>
+                    <img src={src} className="max-w-full max-h-full rounded shadow-2xl" />
+                    <button className="absolute top-4 right-4 text-white p-2 bg-white/20 rounded-full hover:bg-white/40"><Icons.Trash /></button>
+                </div>
+            );
         };
 
         // --- COMPONENTE PIE CHART ---
@@ -247,58 +292,42 @@
                 ctx.stroke();
             };
 
-            const stopDrawing = () => {
-                if (isDrawing) {
-                    setIsDrawing(false);
-                }
-            };
-
-            const handleClear = () => {
-                const canvas = canvasRef.current;
-                const ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            };
-
-            const handleConfirm = () => {
-                onSave(canvasRef.current.toDataURL());
-            };
+            const stopDrawing = () => { setIsDrawing(false); };
+            const handleClear = () => { const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); };
+            const handleConfirm = () => { onSave(canvasRef.current.toDataURL()); };
 
             return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay backdrop-blur-sm">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
                     <div className="bg-stone-100 border border-stone-300 rounded-xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
                         <h3 className="text-lg font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.Pen /> Assinatura do Responsável</h3>
                         <div className="bg-white rounded-lg mb-4 h-48 border border-stone-400 relative overflow-hidden">
-                             <canvas
-                                ref={canvasRef}
-                                className="w-full h-full touch-none"
-                                onMouseDown={startDrawing}
-                                onMouseMove={draw}
-                                onMouseUp={stopDrawing}
-                                onMouseLeave={stopDrawing}
-                                onTouchStart={startDrawing}
-                                onTouchMove={draw}
-                                onTouchEnd={stopDrawing}
-                            />
+                             <canvas ref={canvasRef} className="w-full h-full touch-none" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} />
                             <div className="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none">Assine acima</div>
                         </div>
                         <div className="flex gap-2">
                              <button onClick={onCancel} className="flex-1 py-3 border border-stone-300 rounded-lg text-stone-600 font-bold hover:bg-stone-200 transition-colors">Cancelar</button>
                              <button onClick={handleClear} className="px-4 py-3 border border-stone-300 rounded-lg text-stone-600 font-bold hover:text-red-500 hover:bg-stone-200 transition-colors" title="Limpar"><Icons.Trash /></button>
-                             <button onClick={handleConfirm} className="flex-1 py-3 bg-yellow-500 text-stone-900 rounded-lg font-bold hover:bg-yellow-400 shadow-lg shadow-yellow-500/20 transition-colors">Confirmar Assinatura</button>
+                             <button onClick={handleConfirm} className="flex-1 py-3 bg-yellow-500 text-stone-900 rounded-lg font-bold hover:bg-yellow-400 shadow-lg shadow-yellow-500/20 transition-colors">Confirmar</button>
                         </div>
                     </div>
                 </div>
             );
         };
 
-        function App() {
+        function AppContent() {
+            const toast = useToast();
             const [view, setView] = useState('loading');
             const [selectedSetor, setSelectedSetor] = useState('');
             const [responsavel, setResponsavel] = useState('');
-            const [data, setData] = useState({ questions: [], inspections: [], lastBackup: null, logo: null });
+            const [questions, setQuestions] = useState([]);
+            const [inspections, setInspections] = useState([]);
+            const [logo, setLogo] = useState(null);
+            const [lastBackup, setLastBackup] = useState(null);
+            const [lightboxImg, setLightboxImg] = useState(null);
             
             // Estado Inspeção
             const [inspectionDate, setInspectionDate] = useState(new Date().toISOString().split('T')[0]);
+            const [inspectionSearch, setInspectionSearch] = useState('');
             const [answers, setAnswers] = useState({});
             const [obs, setObs] = useState({});
             const [evidences, setEvidences] = useState({}); 
@@ -320,28 +349,56 @@
             const [adminFilterSetor, setAdminFilterSetor] = useState('TODOS');
             const [searchTerm, setSearchTerm] = useState('');
 
+            // --- CARREGAMENTO INICIAL COM INDEXEDDB ---
             useEffect(() => {
-                let localData = Storage.get();
-                if (localData.questions.length === 0) localData = Storage.reset();
-                setData(localData);
-                setView('dashboard');
-            }, []);
+                const loadData = async () => {
+                    try {
+                        const q = await IDB.getConfig('questions');
+                        const l = await IDB.getConfig('logo');
+                        const b = await IDB.getConfig('lastBackup');
+                        const insps = await IDB.getAllInspections();
 
-            useEffect(() => {
-                if (view !== 'loading') Storage.set(data);
-            }, [data, view]);
+                        // Migração LocalStorage -> IndexedDB se necessário
+                        if (!q || q.length === 0) {
+                            const lsData = localStorage.getItem('imac_offline_data');
+                            if (lsData) {
+                                const parsed = JSON.parse(lsData);
+                                await IDB.setConfig('questions', parsed.questions || STATIC_DB_PERGUNTAS);
+                                await IDB.setConfig('logo', parsed.logo);
+                                await IDB.setConfig('lastBackup', parsed.lastBackup);
+                                if (parsed.inspections) {
+                                    for (let i of parsed.inspections) await IDB.saveInspection(i);
+                                }
+                                localStorage.removeItem('imac_offline_data'); // Limpa LS após migrar
+                                window.location.reload();
+                                return;
+                            }
+                        }
+
+                        setQuestions(q || STATIC_DB_PERGUNTAS);
+                        setLogo(l);
+                        setLastBackup(b);
+                        setInspections(insps || []);
+                        setView('dashboard');
+                    } catch (e) {
+                        console.error("Erro ao carregar DB", e);
+                        toast("Erro crítico ao carregar banco de dados.", 'error');
+                    }
+                };
+                loadData();
+            }, []);
 
             const weekId = getWeekID(inspectionDate); 
             const currentWeekId = getWeekID(new Date().toISOString());
             
             const allSetors = useMemo(() => {
-                const s = new Set(data.questions.map(p => p.setor).filter(x => x !== 'TODOS'));
+                const s = new Set(questions.map(p => p.setor).filter(x => x !== 'TODOS'));
                 return Array.from(s).sort();
-            }, [data.questions]);
+            }, [questions]);
 
             const inspectionsThisWeek = useMemo(() => {
-                return data.inspections.filter(i => i.weekId === currentWeekId);
-            }, [data.inspections, currentWeekId]);
+                return inspections.filter(i => i.weekId === currentWeekId);
+            }, [inspections, currentWeekId]);
 
             const setoresConcluidos = useMemo(() => new Set(inspectionsThisWeek.map(i => i.setor)), [inspectionsThisWeek]);
 
@@ -354,8 +411,8 @@
 
             const currentQuestions = useMemo(() => {
                 if (!selectedSetor) return [];
-                return data.questions.filter(p => p.setor === selectedSetor || p.setor === 'TODOS');
-            }, [selectedSetor, data.questions]);
+                return questions.filter(p => p.setor === selectedSetor || p.setor === 'TODOS');
+            }, [selectedSetor, questions]);
 
             const scores = useMemo(() => {
                 if (currentQuestions.length === 0) return { real: 0, bonus: 0 };
@@ -366,12 +423,15 @@
                 currentQuestions.forEach(q => {
                     const resp = answers[q.id];
                     if (resp) {
-                        totalReal++;
-                        if (resp === 'C') conformesReal++;
+                        // Peso: Se não tiver peso definido, é 1.
+                        const weight = q.weight || 1;
+                        
+                        totalReal += weight;
+                        if (resp === 'C') conformesReal += weight;
 
                         if (q.grupo !== 'ESTRUTURAL') {
-                            totalBonus++;
-                            if (resp === 'C') conformesBonus++;
+                            totalBonus += weight;
+                            if (resp === 'C') conformesBonus += weight;
                         }
                     }
                 });
@@ -382,17 +442,19 @@
                 };
             }, [answers, currentQuestions]);
 
+            // --- AÇÕES ---
             const handleStartInspection = (setor) => {
-                if (!responsavel) { alert("Informe o responsável."); return; }
+                if (!responsavel) { toast("Informe o responsável para iniciar.", 'error'); return; }
                 setSelectedSetor(setor);
                 setAnswers({});
                 setObs({});
                 setEvidences({});
                 setSignature(null);
                 setEditingInspectionId(null);
+                setInspectionSearch('');
                 setInspectionDate(new Date().toISOString().split('T')[0]);
                 
-                const sortedInspections = data.inspections
+                const sortedInspections = inspections
                     .filter(i => i.setor === setor)
                     .sort((a, b) => new Date(b.data) - new Date(a.data));
                 
@@ -419,12 +481,15 @@
                 setSignature(insp.assinatura);
                 setEditingInspectionId(insp.id);
                 setPreviousNCs({});
+                setInspectionSearch('');
                 setView('inspection');
             };
 
-            const handleDeleteAudit = (id) => {
-                if (!confirm("Tem certeza que deseja apagar este registro? Essa ação não pode ser desfeita.")) return;
-                setData(prev => ({ ...prev, inspections: prev.inspections.filter(i => i.id !== id) }));
+            const handleDeleteAudit = async (id) => {
+                if (!confirm("Tem certeza que deseja apagar este registro?")) return;
+                await IDB.deleteInspection(id);
+                setInspections(prev => prev.filter(i => i.id !== id));
+                toast("Inspeção apagada com sucesso.");
             };
 
             const handlePhotoUpload = (qId, e) => {
@@ -446,6 +511,7 @@
                             const currentList = prev[qId] ? (Array.isArray(prev[qId]) ? prev[qId] : [prev[qId]]) : [];
                             return { ...prev, [qId]: [...currentList, compressedBase64] };
                         });
+                        toast("Foto adicionada!", 'success');
                     }
                     img.src = event.target.result;
                 }
@@ -465,10 +531,10 @@
                 setIsSigning(false);
             };
 
-            const handleSaveInspection = () => {
+            const handleSaveInspection = async () => {
                 const pendentes = currentQuestions.filter(q => !answers[q.id]);
-                if (pendentes.length > 0 && !confirm(`Existem ${pendentes.length} perguntas sem resposta. Salvar?`)) return;
-                if (!signature && !confirm("Salvar sem assinatura da Supervisão da Qualidade?")) return;
+                if (pendentes.length > 0 && !confirm(`Existem ${pendentes.length} perguntas sem resposta. Salvar mesmo assim?`)) return;
+                if (!signature && !confirm("Salvar sem assinatura?")) return;
 
                 const newInspection = {
                     id: editingInspectionId || Date.now().toString(),
@@ -485,153 +551,118 @@
                     status: 'Concluído'
                 };
 
+                await IDB.saveInspection(newInspection);
+
                 if (editingInspectionId) {
-                    setData(prev => ({
-                        ...prev,
-                        inspections: prev.inspections.map(i => i.id === editingInspectionId ? newInspection : i)
-                    }));
+                    setInspections(prev => prev.map(i => i.id === editingInspectionId ? newInspection : i));
                 } else {
-                    const weekOfInspection = getWeekID(inspectionDate);
-                    const otherInspections = data.inspections.filter(i => !(i.weekId === weekOfInspection && i.setor === selectedSetor));
-                    setData(prev => ({...prev, inspections: [...otherInspections, newInspection]}));
+                    setInspections(prev => [...prev, newInspection]);
                 }
                 
+                // Gerar sugestão de plano de ação
+                const ncs = Object.entries(newInspection.respostas).filter(([_, v]) => v === 'NC');
+                if (ncs.length > 0) {
+                    const sugestao = ncs.map(([qid]) => {
+                        const q = questions.find(qu => qu.id === qid);
+                        return `- Resolver NC em ${q?.grupo}: ${q?.pergunta} (Obs: ${newInspection.observacoes[qid] || ' '})`;
+                    }).join('\n');
+                    setActionPlan(sugestao);
+                } else {
+                    setActionPlan("Parabéns! Nenhuma não conformidade detectada.");
+                }
+
                 setReportInspection(newInspection);
                 setView('report');
+                toast("Inspeção salva com sucesso!");
             };
 
-            // --- IMPORTAÇÃO EXCEL ---
-            const handleExcelUpload = (e) => {
-                const file = e.target.files[0];
-                if(!file) return;
-
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    const bstr = evt.target.result;
-                    const wb = XLSX.read(bstr, {type:'binary'});
-                    let importedQuestions = [];
-                    const keywords = ["LIMPEZA", "ESTRUTURAL", "ORGANIZAÇÃO", "AUTODISCIPLINA", "UTILIZAÇÃO", "MANIPULADOR", "DOCUMENTAÇÃO", "ILUMINAÇÃO", "PRAGAS", "CLIMATIZAÇÃO", "EQUIPAMENTOS", "PROCESSO", "INSUMOS"];
-
-                    wb.SheetNames.forEach(sheetName => {
-                        if(sheetName.toUpperCase().includes("RESULT") || sheetName.toUpperCase().includes("RECORR")) return;
-                        const ws = wb.Sheets[sheetName];
-                        const jsonData = XLSX.utils.sheet_to_json(ws, {header:1});
-                        
-                        let currentSection = "GERAL";
-
-                        jsonData.forEach((row) => {
-                            if(row.length < 1) return;
-                            
-                            let colA = row[0] ? String(row[0]).trim() : "";
-                            let colB = row[1] ? String(row[1]).trim().toUpperCase() : "";
-
-                            if (!colA) return;
-
-                            const isQuestion = keywords.some(k => colB.includes(k));
-
-                            if (isQuestion) {
-                                importedQuestions.push({
-                                    id: "imp_" + Date.now() + Math.random().toString(16).slice(2),
-                                    setor: sheetName.trim().toUpperCase(),
-                                    grupo: colB,
-                                    pergunta: `${currentSection} - ${colA}`
-                                });
-                            } else {
-                                const ignore = ["MANIPULADOR", "PLATAFORMA", "COLOCAÇÃO", "PONTUAÇÃO", "INCONFORMIDADES", "REQUISITO", "OBSERVAÇÃO"];
-                                if (!ignore.includes(colA.toUpperCase()) && colA.length > 3 && !colB) {
-                                     currentSection = colA.toUpperCase();
-                                }
-                            }
-                        });
-                    });
-
-                    if(importedQuestions.length > 0) {
-                        if(confirm(`Encontradas ${importedQuestions.length} perguntas em ${wb.SheetNames.length} abas. Deseja substituir o banco de dados atual?`)) {
-                            setData(prev => ({...prev, questions: importedQuestions}));
-                            alert("Importação realizada com sucesso!");
-                        }
-                    } else {
-                        alert("Não foi possível identificar perguntas no formato esperado.");
-                    }
-                };
-                reader.readAsBinaryString(file);
-            };
-
-            const handleSaveQuestion = (e) => {
+            const handleSaveQuestion = async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.target);
+                const weight = parseInt(formData.get('weight')) || 1;
                 const newQ = {
                     id: editingQ?.id || Date.now().toString(),
                     setor: formData.get('setor').toUpperCase(),
                     grupo: formData.get('grupo').toUpperCase(),
-                    pergunta: formData.get('pergunta')
+                    pergunta: formData.get('pergunta'),
+                    critical: formData.get('critical') === 'on',
+                    weight: weight
                 };
-                let newQuestions = editingQ ? data.questions.map(q => q.id === editingQ.id ? newQ : q) : [...data.questions, newQ];
-                setData(prev => ({ ...prev, questions: newQuestions }));
+                let newQuestions = editingQ ? questions.map(q => q.id === editingQ.id ? newQ : q) : [...questions, newQ];
+                
+                await IDB.setConfig('questions', newQuestions);
+                setQuestions(newQuestions);
                 setIsModalOpen(false);
                 setEditingQ(null);
+                toast("Pergunta salva.");
             };
 
-            const handleDeleteQuestion = (id) => {
-                if (!confirm("Excluir pergunta?")) return;
-                setData(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== id) }));
+            const handleExportCSV = () => {
+                const headers = ["ID", "Data", "Semana", "Setor", "Responsavel", "Nota", "Questão", "Grupo", "Peso", "Resposta", "Observação"];
+                const rows = [];
+                inspections.forEach(insp => {
+                    Object.entries(insp.respostas).forEach(([qId, resp]) => {
+                        const q = questions.find(qu => qu.id === qId);
+                        rows.push([
+                            insp.id,
+                            new Date(insp.data).toLocaleDateString(),
+                            insp.weekId,
+                            insp.setor,
+                            insp.responsavel,
+                            insp.score,
+                            q ? q.pergunta.replace(/;/g, ',') : 'Questão removida',
+                            q ? q.grupo : '-',
+                            q ? (q.weight || 1) : 1,
+                            resp,
+                            (insp.observacoes[qId] || '').replace(/;/g, ',')
+                        ]);
+                    });
+                });
+
+                const csvContent = "data:text/csv;charset=utf-8," 
+                    + headers.join(";") + "\n" 
+                    + rows.map(e => e.join(";")).join("\n");
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", "imac_dados_brutos.csv");
+                document.body.appendChild(link);
+                link.click();
+                toast("Download iniciado!");
             };
 
             const handleLogoUpload = (e) => {
                 const file = e.target.files[0];
-                if (!file || file.size > 2000000) { alert("Imagem muito grande ou inválida."); return; }
+                if (!file) return;
                 const reader = new FileReader();
-                reader.onloadend = () => setData(prev => ({ ...prev, logo: reader.result }));
+                reader.onloadend = async () => {
+                    await IDB.setConfig('logo', reader.result);
+                    setLogo(reader.result);
+                    toast("Logo atualizada.");
+                };
                 reader.readAsDataURL(file);
             };
 
-            const handleDownloadBackup = () => {
-                const backupData = { ...data, lastBackup: new Date().toISOString() };
-                setData(backupData);
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
-                const anchor = document.createElement('a');
-                anchor.setAttribute("href", dataStr);
-                anchor.setAttribute("download", `backup_imac_${new Date().toISOString().split('T')[0]}.json`);
-                document.body.appendChild(anchor);
-                anchor.click();
-                anchor.remove();
-            };
+            // --- Lógica de Filtro Busca Inteligente ---
+            const filteredInspectionQuestions = useMemo(() => {
+                if (!inspectionSearch) return currentQuestions;
+                const lower = inspectionSearch.toLowerCase();
+                return currentQuestions.filter(q => 
+                    q.pergunta.toLowerCase().includes(lower) || 
+                    q.grupo.toLowerCase().includes(lower)
+                );
+            }, [currentQuestions, inspectionSearch]);
 
-            const handleRestoreBackup = (e) => {
-                const reader = new FileReader();
-                reader.readAsText(e.target.files[0], "UTF-8");
-                reader.onload = (evt) => {
-                    try {
-                        const parsed = JSON.parse(evt.target.result);
-                        if (parsed.questions && Array.isArray(parsed.inspections)) {
-                            if(confirm("Restaurar backup? Isso substituirá os dados atuais.")) {
-                                setData(parsed);
-                                alert("Sucesso!");
-                            }
-                        } else alert("Arquivo inválido.");
-                    } catch (err) { alert("Erro ao ler arquivo."); }
-                };
-            };
-
-            const handleFinishCycle = () => {
-                if(confirm("Deseja finalizar esta rodada? \n\nATENÇÃO: Isso limpará os dados da tela para iniciar uma nova rodada. Certifique-se de ter salvo o backup ou relatórios se necessário.")) {
-                    setData(prev => ({
-                        ...prev,
-                        inspections: prev.inspections.filter(i => i.weekId !== getWeekID(new Date().toISOString()))
-                    }));
-                    alert("Ciclo finalizado! O painel está pronto para novas auditorias.");
-                }
-            };
-
-            // --- ANALYTICS ---
+            // --- ANALYTICS CALCULATION ---
             const analytics = useMemo(() => {
                 let filteredInspections = [];
-                const safeInspections = Array.isArray(data.inspections) ? data.inspections.filter(i => i && i.data) : [];
-
+                // inspections e questions vêm do estado do componente AppContent
+                
                 if (analyticsTab === 'weekly') {
-                    filteredInspections = safeInspections.filter(i => i.weekId === weekId);
+                    filteredInspections = inspections.filter(i => i.weekId === weekId);
                 } else {
-                    filteredInspections = safeInspections.filter(i => i.data.startsWith(selectedMonth));
+                    filteredInspections = inspections.filter(i => i.data.startsWith(selectedMonth));
                 }
 
                 const totalScore = filteredInspections.reduce((acc, curr) => acc + (curr.score || 0), 0);
@@ -672,8 +703,10 @@
                         Object.entries(insp.respostas).forEach(([qId, resp]) => {
                             if (resp === 'NC') {
                                 ncBySector[insp.setor] = (ncBySector[insp.setor] || 0) + 1;
-                                const question = data.questions.find(q => q.id === qId);
-                                if (question) ncByCategory[question.grupo] = (ncByCategory[question.grupo] || 0) + 1;
+                                const question = questions.find(q => q.id === qId);
+                                if (question) {
+                                    ncByCategory[question.grupo] = (ncByCategory[question.grupo] || 0) + 1;
+                                }
                             }
                         });
                     }
@@ -707,663 +740,531 @@
                 const summaryText = `Neste período (${analyticsTab === 'weekly' ? 'Semana' : 'Mês'}), foram realizadas ${totalInspections} inspeções, resultando em uma média global de ${avgScore}%. O setor com melhor desempenho foi "${bestSector}", enquanto "${worstSector}" apresentou os menores índices. A principal categoria de não conformidades foi "${mainIssue}".`;
 
                 return { avgScore, avgBonusScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText, filteredInspections };
-            }, [data.inspections, data.questions, weekId, analyticsTab, selectedMonth]);
+            }, [inspections, questions, weekId, analyticsTab, selectedMonth]);
 
-            
-            if (view === 'loading') return <div className="flex h-screen bg-stone-100 items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div></div>;
+            if (view === 'loading') return <div className="flex h-screen bg-stone-100 items-center justify-center flex-col gap-4"><div className="animate-spin rounded-full h-12 w-12 border-b-4 border-yellow-500"></div><p className="text-stone-500 font-bold animate-pulse">Carregando Sistema...</p></div>;
 
-            // VIEW: REPORT (PDF INDIVIDUAL)
-            if (view === 'report' && reportInspection) {
-                const reportQuestions = data.questions.filter(q => q.setor === reportInspection.setor || q.setor === 'TODOS');
-                return (
-                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
-                        <div className="flex justify-between items-center mb-6 no-print">
-                            <button onClick={() => setView('dashboard')} className="bg-stone-200 text-stone-800 px-4 py-2 rounded font-bold border border-stone-300 hover:bg-stone-300">Voltar</button>
-                            <button onClick={() => window.print()} className="bg-yellow-500 text-white font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-yellow-600"><Icons.List /> Imprimir / PDF</button>
-                        </div>
-                        <div className="border border-gray-300 p-8 print-border print-scale-down">
-                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6 print:mb-2 print:pb-2">
-                                <div><h1 className="text-2xl font-bold uppercase print:text-lg">Relatório de Inspeção</h1><p className="text-sm text-gray-600 print:text-xs">Gestão de Qualidade IMAC</p></div>
-                                {data.logo && <img src={data.logo} className="h-12 object-contain print-img-small" />}
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 mb-6 text-sm print:text-xs print:mb-2">
-                                <div><span className="font-bold">Setor:</span> {reportInspection.setor}</div>
-                                <div><span className="font-bold">Data:</span> {new Date(reportInspection.data).toLocaleDateString()}</div>
-                                <div><span className="font-bold">Auditor:</span> {reportInspection.responsavel}</div>
-                                <div><span className="font-bold">Semana:</span> {reportInspection.weekId}</div>
-                            </div>
-                            
-                            <div className="flex gap-4 mb-8 print:mb-4">
-                                <div className="flex-1 p-4 bg-gray-100 rounded text-center print:p-2">
-                                    <span className="text-lg font-bold print:text-sm">Nota Real: </span>
-                                    <span className={`text-2xl font-black ${reportInspection.score >= 80 ? 'text-green-700' : 'text-red-700'} print:text-lg`}>{reportInspection.score}%</span>
+            // RENDERIZAÇÃO DAS TELAS
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col text-stone-900 shadow-2xl relative">
+                    
+                    {/* LIGHTBOX */}
+                    <Lightbox src={lightboxImg} onClose={() => setLightboxImg(null)} />
+
+                    {/* VIEW: DASHBOARD */}
+                    {view === 'dashboard' && (
+                        <>
+                            <header className="bg-gradient-to-b from-yellow-500 to-yellow-600 text-stone-900 p-6 rounded-b-3xl shadow-lg mb-6 relative border-b border-yellow-600/30">
+                                <div className="absolute top-6 right-6 flex gap-2">
+                                    <button onClick={() => setView('analytics')} className="p-2 bg-white/30 rounded-full hover:bg-white/50 text-stone-900 transition-colors" title="Indicadores"><Icons.Chart /></button>
+                                    <button onClick={() => setView('settings')} className="p-2 bg-white/30 rounded-full hover:bg-white/50 text-stone-900 hover:text-stone-700 transition-colors" title="Configurações"><Icons.Gear /></button>
                                 </div>
-                                <div className="flex-1 p-4 bg-gray-100 rounded text-center border-l-4 border-yellow-500 print:p-2">
-                                    <span className="text-lg font-bold text-gray-700 print:text-sm">Nota Gratificação: </span>
-                                    <span className="text-2xl font-black text-gray-900 print:text-lg">{reportInspection.bonusScore || reportInspection.score}%</span>
+                                <div className="mb-4">
+                                    {logo ? <img src={logo} alt="Logo" className="h-16 object-contain mb-2 drop-shadow-md" /> : <h1 className="text-2xl font-bold text-stone-900">Gestão IMAC</h1>}
+                                    <p className="text-stone-800 text-sm font-medium">Controle de Qualidade PRO</p>
                                 </div>
-                            </div>
-
-                            <div className="mb-8 print:mb-2">
-                                <h3 className="font-bold border-b border-gray-300 mb-4 pb-1 print:text-sm print:mb-2">Não Conformidades</h3>
-                                {reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').length === 0 ? (
-                                    <p className="text-sm italic text-gray-500 print:text-xs">Nenhuma não conformidade registrada.</p>
-                                ) : (
-                                    <div className="space-y-4 print-grid-2 print:space-y-0">
-                                        {reportQuestions.filter(q => reportInspection.respostas[q.id] === 'NC').map(q => (
-                                            <div key={q.id} className="border border-red-100 bg-red-50 p-3 rounded no-break print:p-2">
-                                                <div className="flex justify-between">
-                                                    <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded print:text-[10px]">{q.grupo}</span>
+                                <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl border border-yellow-200 shadow-sm">
+                                    <div className="flex justify-between items-end mb-2">
+                                        <span className="text-stone-600 text-sm font-bold">Progresso Semanal</span>
+                                        <span className="text-2xl font-bold text-yellow-600">{progress.pct}%</span>
+                                    </div>
+                                    <div className="w-full bg-stone-200 rounded-full h-3 mb-2"><div className="bg-yellow-500 h-3 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(234,179,8,0.5)]" style={{ width: `${progress.pct}%` }}></div></div>
+                                    <p className="text-xs text-stone-500 text-right font-medium">{progress.done}/{progress.total} setores verificados</p>
+                                </div>
+                            </header>
+                            <main className="flex-1 px-6 pb-20 animate-fade-in">
+                                <div className="mb-6"><label className="block text-sm font-bold text-stone-700 mb-2">Responsável</label><input type="text" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} placeholder="Digite seu nome..." className="w-full p-3 rounded-xl bg-white border border-stone-300 text-stone-900 shadow-sm outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent placeholder-stone-400 transition-all" /></div>
+                                <div className="space-y-3">
+                                    {allSetors.map(setor => {
+                                        const isDone = setoresConcluidos.has(setor);
+                                        const insp = inspectionsThisWeek.find(i => i.setor === setor);
+                                        return (
+                                            <button key={setor} onClick={() => isDone ? (setReportInspection(insp), setView('report')) : handleStartInspection(setor)} className={`w-full p-4 rounded-xl flex items-center justify-between card-shadow transition-all active:scale-95 border ${isDone ? 'bg-white border-yellow-500 shadow-md' : 'bg-white border-stone-200 hover:border-stone-400'}`}>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isDone ? 'bg-yellow-100 text-yellow-700' : 'bg-stone-100 text-stone-500'}`}>{isDone ? <Icons.Check /> : <Icons.List />}</div>
+                                                    <div className="text-left"><p className={`font-bold ${isDone ? 'text-stone-900' : 'text-stone-700'}`}>{setor}</p>{isDone && <p className="text-xs text-yellow-700 font-bold">Nota: {insp.score}%</p>}</div>
                                                 </div>
-                                                <p className="font-bold text-sm mt-2 print:text-xs">{q.pergunta}</p>
-                                                <p className="text-sm mt-1 text-red-800 print:text-xs"><span className="font-bold">Obs:</span> {reportInspection.observacoes[q.id] || '-'}</p>
-                                                {reportInspection.evidencias && reportInspection.evidencias[q.id] && (Array.isArray(reportInspection.evidencias[q.id]) ? reportInspection.evidencias[q.id] : [reportInspection.evidencias[q.id]]).map((img, idx) => (
-                                                    <div key={idx} className="mt-2 inline-block mr-2 w-full">
-                                                        <img src={img} className="print-img-evidence object-contain border border-gray-300 bg-white" />
+                                                {isDone ? <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-bold border border-yellow-200">RELATÓRIO</span> : <span className="h-8 w-8 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center hover:bg-stone-200 hover:text-yellow-600 transition-colors">→</span>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </main>
+                        </>
+                    )}
+
+                    {/* VIEW: INSPECTION */}
+                    {view === 'inspection' && (
+                        <div className="flex flex-col h-screen">
+                            <header className="sticky top-0 z-20 bg-white border-b border-stone-200 px-6 py-4 shadow-md">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div><h2 className="text-lg font-bold text-stone-800">{selectedSetor}</h2><p className="text-xs text-stone-500">Resp: {responsavel}</p></div>
+                                    <div className="text-right flex flex-col items-end">
+                                        <label className="text-[10px] text-stone-400 font-bold uppercase">Data</label>
+                                        <input type="date" value={inspectionDate} onChange={(e) => setInspectionDate(e.target.value)} className="bg-transparent text-stone-600 text-sm font-bold text-right outline-none focus:text-yellow-600" />
+                                    </div>
+                                </div>
+                                <div className="flex justify-between items-center pt-2 border-t border-stone-200 mt-2">
+                                    <div className="text-center w-1/2 border-r border-stone-200"><span className={`text-2xl font-black ${scores.real >= 80 ? 'text-green-600' : 'text-red-600'}`}>{scores.real}%</span><span className="text-[10px] font-bold text-stone-400 block uppercase">Real</span></div>
+                                    <div className="text-center w-1/2"><span className="text-xl font-bold text-yellow-600">{scores.bonus}%</span><span className="text-[10px] font-bold text-yellow-700 block uppercase">Bônus</span></div>
+                                </div>
+                            </header>
+                            
+                            {/* BARRA DE BUSCA INTELIGENTE */}
+                            <div className="bg-stone-100 p-4 pb-2 sticky top-[130px] z-10">
+                                <div className="relative shadow-sm">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400"><Icons.Search /></div>
+                                    <input type="text" value={inspectionSearch} onChange={(e) => setInspectionSearch(e.target.value)} placeholder="Busca rápida (ex: lixo, pia, teto)..." className="w-full pl-10 p-3 bg-white border border-stone-300 rounded-xl text-stone-800 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 transition-all placeholder-stone-400" />
+                                    {inspectionSearch && <button onClick={() => setInspectionSearch('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-600 font-bold">✕</button>}
+                                </div>
+                            </div>
+
+                            <main className="flex-1 p-6 pt-2 space-y-6 overflow-y-auto pb-24">
+                                {filteredInspectionQuestions.length === 0 ? <p className="text-center text-stone-500 py-10">Nenhuma pergunta encontrada.</p> : 
+                                filteredInspectionQuestions.map((q, idx) => {
+                                    const prevNC = previousNCs[q.id];
+                                    return (
+                                    <div key={q.id || idx} className="animate-fade-in bg-white p-4 rounded-xl shadow-sm border border-stone-100">
+                                        <div className="mb-2">
+                                            <div className="flex gap-2">
+                                                <span className="text-[10px] font-bold text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-1 rounded uppercase">{q.grupo}</span>
+                                                {q.critical && <span className="text-[10px] font-bold text-white bg-red-600 px-2 py-1 rounded uppercase flex items-center gap-1"><Icons.Alert /> CRÍTICO</span>}
+                                                <span className="text-[10px] font-bold text-stone-600 bg-stone-200 border border-stone-300 px-2 py-1 rounded uppercase">Peso: {q.weight || 1}</span>
+                                            </div>
+                                            <p className="mt-2 text-stone-800 font-medium leading-snug">{q.pergunta}</p>
+                                        </div>
+                                        {prevNC && <div className="mb-3 p-2 bg-yellow-50 border-l-2 border-yellow-400 rounded-r text-xs text-yellow-800 flex gap-2 items-start"><Icons.Alert /><div><span className="font-bold block text-yellow-700">Recorrente:</span> "{prevNC}"</div></div>}
+                                        <div className="flex gap-2">
+                                            {['C', 'NC', 'NA'].map(opt => (
+                                                <button key={opt} onClick={() => setAnswers(p => ({...p, [q.id]: opt}))} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all shadow-sm ${answers[q.id] === opt ? (opt === 'C' ? 'bg-green-600 text-white shadow-md' : opt === 'NC' ? 'bg-red-600 text-white shadow-md' : 'bg-stone-500 text-white') : 'bg-white border border-stone-300 text-stone-500 hover:bg-stone-50'}`}>{opt}</button>
+                                            ))}
+                                        </div>
+                                        {answers[q.id] === 'NC' && (
+                                            <div className="mt-2 space-y-2 animate-fade-in">
+                                                <input type="text" placeholder="Descreva o problema..." value={obs[q.id] || ''} onChange={(e) => setObs(p => ({...p, [q.id]: e.target.value}))} className="w-full text-sm p-3 bg-red-50 border-red-200 rounded-lg text-red-800 focus:border-red-400 outline-none border placeholder-red-300" />
+                                                {evidences[q.id] && evidences[q.id].length > 0 && (
+                                                    <div className="flex gap-2 overflow-x-auto py-2">
+                                                        {evidences[q.id].map((img, i) => (
+                                                            <div key={i} className="relative w-16 h-16 shrink-0 group cursor-pointer" onClick={() => setLightboxImg(img)}>
+                                                                <img src={img} className="w-full h-full object-cover rounded border border-stone-300" />
+                                                                <button onClick={(e) => {e.stopPropagation(); removePhoto(q.id, i)}} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow-md w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-red-600">x</button>
+                                                            </div>
+                                                        ))}
                                                     </div>
-                                                ))}
+                                                )}
+                                                <div className="flex items-center gap-2">
+                                                    <label className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed cursor-pointer transition-colors ${evidences[q.id] && evidences[q.id].length > 0 ? 'border-green-500 text-green-600 bg-green-50' : 'border-stone-400 text-stone-500 hover:border-stone-600 hover:text-stone-700 bg-white'}`}>
+                                                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handlePhotoUpload(q.id, e)} />
+                                                        <Icons.Camera /> <span className="text-xs font-bold">Foto</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    );})
+                                }
+                                <div className="mt-8 border-t border-stone-300 pt-6 bg-white p-4 rounded-xl">
+                                    <h3 className="text-sm font-bold text-stone-700 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura</h3>
+                                    <button onClick={() => setIsSigning(true)} className={`w-full py-3 rounded-lg border border-stone-300 flex items-center justify-center gap-2 transition-all ${signature ? 'bg-green-50 text-green-600 border-green-500' : 'bg-white text-stone-600 hover:bg-stone-50'}`}>
+                                        {signature ? <><Icons.Check /> Assinatura Registrada</> : <><Icons.Pen /> Assinar</>}
+                                    </button>
+                                    {signature && <img src={signature} className="mt-2 h-12 object-contain opacity-70" />}
+                                </div>
+                            </main>
+                            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-stone-200 flex gap-3 max-w-md mx-auto shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30">
+                                <button onClick={() => setView('dashboard')} className="px-6 py-3 rounded-xl border border-stone-300 font-bold text-stone-500 hover:bg-stone-50">Cancelar</button>
+                                <button onClick={handleSaveInspection} className="flex-1 bg-yellow-500 text-white rounded-xl font-bold shadow-lg shadow-yellow-500/20 hover:bg-yellow-600 transition-colors">Salvar Inspeção</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VIEW: SETTINGS */}
+                    {view === 'settings' && (
+                        <div className="min-h-screen bg-stone-100 flex flex-col">
+                            <header className="bg-white p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-200">
+                                <button onClick={() => setView('dashboard')} className="text-sm font-bold text-stone-500 hover:text-yellow-600">← Voltar</button>
+                                <h1 className="font-bold text-yellow-600">Configurações</h1>
+                                <div className="w-10"></div>
+                            </header>
+                            <div className="flex border-b border-stone-200 bg-white sticky top-[60px] z-10">
+                                <button onClick={() => setSettingsTab('history')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'history' ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-stone-500'}`}>Histórico</button>
+                                <button onClick={() => setSettingsTab('questions')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'questions' ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-stone-500'}`}>Perguntas</button>
+                                <button onClick={() => setSettingsTab('system')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'system' ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-stone-500'}`}>Sistema</button>
+                            </div>
+                            <main className="flex-1 p-6 pb-24 space-y-4">
+                                {settingsTab === 'system' && (
+                                    <div className="space-y-6 animate-fade-in">
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+                                            <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.Excel /> Exportação de Dados</h2>
+                                            <p className="text-xs text-stone-500 mb-4">Baixe todos os dados para analisar no Excel.</p>
+                                            <button onClick={handleExportCSV} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 flex items-center justify-center gap-2"><Icons.Download /> Baixar CSV / Excel</button>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
+                                            <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.Image /> Logo</h2>
+                                            <label className="block w-full p-4 border-2 border-dashed border-stone-300 rounded-lg text-center cursor-pointer hover:bg-stone-50">
+                                                <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                                                {logo ? <img src={logo} className="h-12 mx-auto object-contain" /> : <span className="text-stone-400 text-xs font-bold">Clique para enviar logo</span>}
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+                                {settingsTab === 'questions' && (
+                                    <div className="space-y-4">
+                                        <div className="relative">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400"><Icons.Search /></div>
+                                            <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar pergunta..." className="w-full pl-10 p-3 bg-white border border-stone-300 rounded-xl outline-none focus:border-yellow-500" />
+                                        </div>
+                                        <div className="space-y-3">
+                                            {questions.filter(q => q.pergunta.toLowerCase().includes(searchTerm.toLowerCase())).map(q => (
+                                                <div key={q.id} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex justify-between items-start">
+                                                    <div className="flex-1 pr-2">
+                                                        <div className="flex gap-2 mb-1">
+                                                            <span className="text-[10px] bg-stone-100 px-2 rounded border">{q.setor}</span>
+                                                            {q.critical && <span className="text-[10px] bg-red-600 text-white px-2 rounded">CRÍTICO</span>}
+                                                            {(q.weight > 1) && <span className="text-[10px] bg-blue-100 text-blue-800 px-2 rounded border border-blue-200">Peso {q.weight}</span>}
+                                                        </div>
+                                                        <p className="text-sm font-medium">{q.pergunta}</p>
+                                                    </div>
+                                                    <button onClick={() => { setEditingQ(q); setIsModalOpen(true); }} className="p-2 bg-stone-100 rounded text-stone-500"><Icons.Edit /></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button onClick={() => { setEditingQ(null); setIsModalOpen(true); }} className="fixed bottom-6 right-6 bg-yellow-500 text-white h-14 w-14 rounded-full shadow-lg flex items-center justify-center hover:bg-yellow-600 z-20"><Icons.Plus /></button>
+                                    </div>
+                                )}
+                                {settingsTab === 'history' && (
+                                    <div className="space-y-3">
+                                        {inspections.sort((a,b) => new Date(b.data) - new Date(a.data)).map(insp => (
+                                            <div key={insp.id} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex justify-between items-center">
+                                                <div>
+                                                    <div className="font-bold">{insp.setor}</div>
+                                                    <div className="text-xs text-stone-500">{new Date(insp.data).toLocaleDateString()} • {insp.responsavel}</div>
+                                                </div>
+                                                <div className="flex gap-2 items-center">
+                                                    <span className={`font-bold ${insp.score >= 80 ? 'text-green-600' : 'text-red-600'}`}>{insp.score}%</span>
+                                                    <button onClick={() => handleDeleteAudit(insp.id)} className="p-2 bg-stone-100 rounded text-red-500"><Icons.Trash /></button>
+                                                    <button onClick={() => { setReportInspection(insp); setView('report'); }} className="p-2 bg-stone-100 rounded text-stone-500"><Icons.FileText /></button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                 )}
-                            </div>
-                            <div className="mt-12 flex justify-between items-end print:mt-4">
-                                <div className="text-center w-1/3">
-                                    <p className="font-bold text-sm mb-8 print:mb-4 print:text-xs">{reportInspection.responsavel}</p>
-                                    <div className="border-t border-black pt-1 text-xs">Auditor Responsável</div>
-                                </div>
-                                <div className="text-center w-1/3">
-                                    {reportInspection.assinatura ? (<img src={reportInspection.assinatura} className="h-16 mx-auto mb-2 print-img-small" />) : <div className="h-16 print:h-8"></div>}
-                                    <div className="border-t border-black pt-1 text-xs">Responsável pelo acompanhamento da auditoria</div>
-                                </div>
-                            </div>
+                            </main>
                         </div>
-                    </div>
-                );
-            }
+                    )}
 
-            // VIEW: MANAGEMENT REPORT
-            if (view === 'management_report') {
-                return (
-                    <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
-                        <div className="flex justify-between items-center mb-6 no-print">
-                            <button onClick={() => setView('analytics')} className="bg-stone-200 text-stone-800 px-4 py-2 rounded font-bold border border-stone-300 hover:bg-stone-300">Voltar</button>
-                            <div className="flex gap-2">
-                                <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Icons.Printer /> Imprimir Relatório</button>
-                            </div>
-                        </div>
+                    {/* VIEW: ANALYTICS (CORREÇÃO: TELA RESTAURADA) */}
+                    {view === 'analytics' && (
+                        <div className="max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col animate-fade-in text-stone-900">
+                            <header className="bg-white p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-200">
+                                <button onClick={() => setView('dashboard')} className="text-sm font-bold text-stone-500 hover:text-yellow-600 transition-colors">← Voltar</button>
+                                <h1 className="font-bold text-yellow-600">Indicadores</h1>
+                                <div className="w-10"></div>
+                            </header>
 
-                        <div className="bg-white p-8 border border-gray-300 shadow-sm print:shadow-none print:border-none print-scale-down">
-                            <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8 print:mb-4 print:pb-2">
-                                <div><h1 className="text-3xl font-bold uppercase tracking-tight print:text-xl">Relatório Gerencial</h1><p className="text-sm text-gray-500 uppercase tracking-widest mt-1 print:text-xs">Indicadores de Qualidade - IMAC</p></div>
-                                {data.logo && <img src={data.logo} className="h-16 object-contain print-img-small" />}
+                            <div className="flex border-b border-stone-200 bg-white p-2 gap-2 sticky top-[60px] z-10">
+                                <button onClick={() => setAnalyticsTab('weekly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'weekly' ? 'bg-yellow-500 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>Semanal</button>
+                                <button onClick={() => setAnalyticsTab('monthly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'monthly' ? 'bg-yellow-500 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>Mensal</button>
                             </div>
 
-                            <div className="flex justify-between mb-8 text-sm bg-gray-50 p-4 rounded border border-gray-200 print:mb-4 print:p-2 print:text-xs">
-                                <div><strong>Período:</strong> {analyticsTab === 'weekly' ? 'Semanal (' + getWeekRange() + ')' : 'Mensal (' + selectedMonth + ')'}</div>
-                                <div><strong>Emissão:</strong> {new Date().toLocaleDateString()}</div>
-                            </div>
-
-                            <div className="mb-8 print:mb-4">
-                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">1. Resumo Executivo</h2>
-                                <p className="text-justify leading-relaxed text-gray-800 print:text-xs">{analytics.summaryText}</p>
-                            </div>
-
-                            <div className="grid grid-cols-4 gap-4 mb-8 text-center print:mb-4 print:gap-2">
-                                <div className="p-4 border rounded bg-gray-50 print:p-2">
-                                    <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.avgScore}%</div>
-                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Média Geral</div>
+                            {analyticsTab === 'monthly' && (
+                                <div className="px-6 pt-4">
+                                    <label className="text-xs font-bold text-stone-500 uppercase flex items-center gap-2 mb-2"><Icons.Calendar /> Selecionar Mês</label>
+                                    <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full p-2 bg-white border border-stone-300 rounded-lg text-stone-800 outline-none focus:border-yellow-500" />
                                 </div>
-                                <div className="p-4 border rounded bg-yellow-50 border-yellow-200 print:p-2">
-                                    <div className="text-3xl font-black text-yellow-800 print:text-xl">{analytics.avgBonusScore}%</div>
-                                    <div className="text-xs uppercase text-yellow-800 font-bold mt-1 print:text-[10px]">Média Gratificação</div>
-                                </div>
-                                <div className="p-4 border rounded bg-gray-50 print:p-2">
-                                    <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.ranking.length}</div>
-                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Inspeções</div>
-                                </div>
-                                <div className="p-4 border rounded bg-gray-50 print:p-2">
-                                    <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.pieCategory.length > 0 ? analytics.pieCategory[0].value : 0}</div>
-                                    <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Maior Incidência (NC)</div>
-                                </div>
-                            </div>
+                            )}
 
-                            <div className="print-grid-2">
-                                <div className="grid grid-cols-2 gap-8 mb-8 print:mb-4 print:gap-4 no-break">
-                                    <div>
-                                        <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-green-700 print:text-xs">Top 3 - Melhores</h2>
-                                        <ul className="text-sm space-y-2 print:text-xs">{analytics.ranking.slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><span className="font-bold">{r.score}%</span></li>))}</ul>
+                            <main className="flex-1 p-6 pb-24 space-y-8">
+                                <button onClick={() => setView('management_report')} className="w-full py-3 bg-yellow-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2 hover:bg-yellow-400 transition-all active:scale-95">
+                                    <Icons.FileText /> Gerar Relatório Gerencial
+                                </button>
+
+                                <div className="bg-white rounded-xl p-6 border border-stone-200 text-center relative overflow-hidden shadow-sm">
+                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400"></div>
+                                    <h3 className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">{analyticsTab === 'weekly' ? 'Média Semanal' : 'Média Mensal'}</h3>
+                                    <div className="flex justify-center items-end gap-2">
+                                        <span className={`text-5xl font-black ${analytics.avgScore >= 80 ? 'text-green-600' : analytics.avgScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>{analytics.avgScore}%</span>
                                     </div>
-                                    <div>
-                                        <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-red-700 print:text-xs">Atenção - Menores</h2>
-                                        <ul className="text-sm space-y-2 print:text-xs">{[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><span className="font-bold text-red-600">{r.score}%</span></li>))}</ul>
+                                    <p className="text-[10px] text-stone-400 mt-2">Baseado em {analytics.ranking.length} registros</p>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-sm font-bold text-stone-700 mb-4 flex items-center gap-2"><Icons.Check /> Média por Auditor</h3>
+                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+                                        {analytics.auditorPerformance.length === 0 ? <div className="p-6 text-center text-stone-500 text-xs">Sem dados.</div> : (
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-stone-50 text-[10px] text-stone-500 uppercase border-b border-stone-200">
+                                                        <th className="p-3">Auditor</th>
+                                                        <th className="p-3 text-center">Qtd</th>
+                                                        <th className="p-3 text-right">Nota Média</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-sm text-stone-700">
+                                                    {analytics.auditorPerformance.map((aud, index) => (
+                                                        <tr key={index} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
+                                                            <td className="p-3 font-medium">{aud.name}</td>
+                                                            <td className="p-3 text-center text-stone-500">{aud.count}</td>
+                                                            <td className={`p-3 text-right font-bold ${aud.avg >= 80 ? 'text-green-600' : 'text-red-600'}`}>{aud.avg}%</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-sm font-bold text-stone-700 mb-4 flex items-center gap-2"><Icons.Chart /> Ranking {analyticsTab === 'weekly' ? 'Semanal' : 'Mensal'}</h3>
+                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+                                        {analytics.ranking.length === 0 ? <div className="p-6 text-center text-stone-500 text-xs">Sem dados.</div> : (
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-stone-50 text-[10px] text-stone-500 uppercase border-b border-stone-200">
+                                                        <th className="p-3">#</th>
+                                                        <th className="p-3">Setor</th>
+                                                        <th className="p-3 text-right">Nota Média</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-sm text-stone-700">
+                                                    {analytics.ranking.map((insp, index) => (
+                                                        <tr key={insp.setor} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
+                                                            <td className="p-3 font-mono text-stone-400">{index + 1}</td>
+                                                            <td className="p-3 font-medium">{insp.setor}</td>
+                                                            <td className={`p-3 text-right font-bold ${insp.score >= 80 ? 'text-green-600' : 'text-red-600'}`}>{insp.score}%</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-8">
+                                    <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+                                        <h3 className="text-xs font-bold text-stone-500 uppercase mb-4 text-center">Ocorrências (NC) por Setor</h3>
+                                        <PieChart data={analytics.pieSector} />
+                                    </div>
+
+                                    <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+                                        <h3 className="text-xs font-bold text-stone-500 uppercase mb-4 text-center">Ocorrências (NC) por Categoria</h3>
+                                        <PieChart data={analytics.pieCategory} />
+                                    </div>
+                                </div>
+                            </main>
+                        </div>
+                    )}
+
+                    {/* MODAL EDITAR PERGUNTA */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 animate-fade-in">
+                                <h2 className="text-lg font-bold mb-4 text-yellow-600">{editingQ ? 'Editar' : 'Nova'} Pergunta</h2>
+                                <form onSubmit={handleSaveQuestion} className="space-y-4">
+                                    <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Setor</label><input name="setor" defaultValue={editingQ?.setor || ''} list="setores-list" className="w-full p-3 bg-stone-50 border rounded-lg outline-none focus:border-yellow-500" required placeholder="Ex: ESTOQUE" /><datalist id="setores-list">{allSetors.map(s => <option key={s} value={s} />)}</datalist></div>
+                                    <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Grupo</label><input name="grupo" defaultValue={editingQ?.grupo || ''} className="w-full p-3 bg-stone-50 border rounded-lg outline-none focus:border-yellow-500" required placeholder="Ex: LIMPEZA" /></div>
+                                    <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Pergunta</label><textarea name="pergunta" defaultValue={editingQ?.pergunta || ''} className="w-full p-3 bg-stone-50 border rounded-lg h-24 resize-none outline-none focus:border-yellow-500" required /></div>
+                                    
+                                    <div className="flex gap-4">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Peso</label>
+                                            <input type="number" name="weight" defaultValue={editingQ?.weight || 1} min="1" className="w-full p-3 bg-stone-50 border rounded-lg outline-none focus:border-yellow-500" />
+                                        </div>
+                                        <div className="flex items-center gap-2 pt-6">
+                                            <input type="checkbox" name="critical" id="critical" defaultChecked={editingQ?.critical} className="w-5 h-5 text-yellow-600 rounded" />
+                                            <label htmlFor="critical" className="text-sm font-bold text-stone-700">Marcar como Crítica (Visual)</label>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2 pt-2"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 border rounded-lg font-bold">Cancelar</button><button type="submit" className="flex-1 py-3 bg-yellow-500 text-white rounded-lg font-bold">Salvar</button></div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VIEW: REPORT (PDF) */}
+                    {view === 'report' && reportInspection && (
+                        <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
+                            <div className="flex justify-between items-center mb-6 no-print">
+                                <button onClick={() => setView('dashboard')} className="bg-stone-200 px-4 py-2 rounded font-bold">Voltar</button>
+                                <button onClick={() => window.print()} className="bg-yellow-500 text-white font-bold px-4 py-2 rounded flex items-center gap-2"><Icons.List /> Imprimir</button>
+                            </div>
+                            <div className="border border-gray-300 p-8 print-border">
+                                <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
+                                    <div><h1 className="text-2xl font-bold uppercase">Relatório de Inspeção</h1><p className="text-sm text-gray-600">Gestão de Qualidade IMAC</p></div>
+                                    {logo && <img src={logo} className="h-12 object-contain print-img-small" />}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                                    <div><span className="font-bold">Setor:</span> {reportInspection.setor}</div>
+                                    <div><span className="font-bold">Data:</span> {new Date(reportInspection.data).toLocaleDateString()}</div>
+                                    <div><span className="font-bold">Auditor:</span> {reportInspection.responsavel}</div>
+                                    <div><span className="font-bold">Nota:</span> {reportInspection.score}%</div>
+                                </div>
+                                <div className="mb-8">
+                                    <h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Não Conformidades</h3>
+                                    <div className="space-y-4 print-grid-2">
+                                        {Object.entries(reportInspection.respostas).filter(([_, v]) => v === 'NC').map(([qid, _]) => {
+                                            const q = questions.find(qu => qu.id === qid);
+                                            return (
+                                                <div key={qid} className="border border-red-100 bg-red-50 p-3 rounded no-break">
+                                                    <p className="font-bold text-sm text-red-700">{q?.pergunta}</p>
+                                                    <p className="text-sm mt-1 text-gray-800"><span className="font-bold">Obs:</span> {reportInspection.observacoes[qid] || '-'}</p>
+                                                    {reportInspection.evidencias && reportInspection.evidencias[qid] && (Array.isArray(reportInspection.evidencias[qid]) ? reportInspection.evidencias[qid] : [reportInspection.evidencias[qid]]).map((img, i) => (
+                                                        <img key={i} src={img} className="mt-2 h-24 border bg-white object-contain print-img-evidence" />
+                                                    ))}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    {Object.values(reportInspection.respostas).every(v => v !== 'NC') && <p className="italic text-gray-500">Nenhuma não conformidade.</p>}
+                                </div>
+                                <div className="mb-8 no-break">
+                                    <h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Plano de Ação Sugerido</h3>
+                                    <div className="p-4 border rounded bg-gray-50 whitespace-pre-wrap text-sm">{actionPlan}</div>
+                                </div>
+                                <div className="mt-12 flex justify-between items-end no-break">
+                                    <div className="text-center w-1/3"><p className="font-bold text-sm mb-8">{reportInspection.responsavel}</p><div className="border-t border-black pt-1 text-xs">Auditor</div></div>
+                                    <div className="text-center w-1/3">{reportInspection.assinatura && <img src={reportInspection.assinatura} className="h-12 mx-auto mb-2 print-img-small" />}<div className="border-t border-black pt-1 text-xs">Responsável Setor</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VIEW: MANAGEMENT REPORT */}
+                    {view === 'management_report' && (
+                        <div className="min-h-screen bg-white text-black p-8 max-w-4xl mx-auto print-container">
+                            <div className="flex justify-between items-center mb-6 no-print">
+                                <button onClick={() => setView('analytics')} className="bg-stone-200 text-stone-800 px-4 py-2 rounded font-bold border border-stone-300 hover:bg-stone-300">Voltar</button>
+                                <div className="flex gap-2">
+                                    <button onClick={() => window.print()} className="bg-blue-600 text-white font-bold px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Icons.Printer /> Imprimir Relatório</button>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-8 border border-gray-300 shadow-sm print:shadow-none print:border-none print-scale-down">
+                                <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8 print:mb-4 print:pb-2">
+                                    <div><h1 className="text-3xl font-bold uppercase tracking-tight print:text-xl">Relatório Gerencial</h1><p className="text-sm text-gray-500 uppercase tracking-widest mt-1 print:text-xs">Indicadores de Qualidade - IMAC</p></div>
+                                    {logo && <img src={logo} className="h-16 object-contain print-img-small" />}
+                                </div>
+
+                                <div className="flex justify-between mb-8 text-sm bg-gray-50 p-4 rounded border border-gray-200 print:mb-4 print:p-2 print:text-xs">
+                                    <div><strong>Período:</strong> {analyticsTab === 'weekly' ? 'Semanal (' + getWeekRange() + ')' : 'Mensal (' + selectedMonth + ')'}</div>
+                                    <div><strong>Emissão:</strong> {new Date().toLocaleDateString()}</div>
+                                </div>
+
+                                <div className="mb-8 print:mb-4">
+                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">1. Resumo Executivo</h2>
+                                    <p className="text-justify leading-relaxed text-gray-800 print:text-xs">{analytics.summaryText}</p>
+                                </div>
+
+                                <div className="grid grid-cols-4 gap-4 mb-8 text-center print:mb-4 print:gap-2">
+                                    <div className="p-4 border rounded bg-gray-50 print:p-2">
+                                        <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.avgScore}%</div>
+                                        <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Média Geral</div>
+                                    </div>
+                                    <div className="p-4 border rounded bg-yellow-50 border-yellow-200 print:p-2">
+                                        <div className="text-3xl font-black text-yellow-800 print:text-xl">{analytics.avgBonusScore}%</div>
+                                        <div className="text-xs uppercase text-yellow-800 font-bold mt-1 print:text-[10px]">Média Gratificação</div>
+                                    </div>
+                                    <div className="p-4 border rounded bg-gray-50 print:p-2">
+                                        <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.ranking.length}</div>
+                                        <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Inspeções</div>
+                                    </div>
+                                    <div className="p-4 border rounded bg-gray-50 print:p-2">
+                                        <div className="text-3xl font-black text-gray-800 print:text-xl">{analytics.pieCategory.length > 0 ? analytics.pieCategory[0].value : 0}</div>
+                                        <div className="text-xs uppercase text-gray-500 font-bold mt-1 print:text-[10px]">Maior Incidência (NC)</div>
+                                    </div>
+                                </div>
+
+                                <div className="print-grid-2">
+                                    <div className="grid grid-cols-2 gap-8 mb-8 print:mb-4 print:gap-4 no-break">
+                                        <div>
+                                            <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-green-700 print:text-xs">Top 3 - Melhores</h2>
+                                            <ul className="text-sm space-y-2 print:text-xs">{analytics.ranking.slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><span className="font-bold">{r.score}%</span></li>))}</ul>
+                                        </div>
+                                        <div>
+                                            <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-red-700 print:text-xs">Atenção - Menores</h2>
+                                            <ul className="text-sm space-y-2 print:text-xs">{[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><span className="font-bold text-red-600">{r.score}%</span></li>))}</ul>
+                                        </div>
+                                    </div>
+
+                                    <div className="mb-8 print:mb-4 no-break">
+                                        <h2 className="text-lg font-bold border-b border-gray-300 mb-4 pb-1 uppercase text-gray-700 print:text-sm">3. Análise de Ocorrências</h2>
+                                        <div className="grid grid-cols-2 gap-8 print:gap-2">
+                                            <div><h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Categoria</h4><div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2"><PieChart data={analytics.pieCategory} isReport={true} /></div></div>
+                                            <div><h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Setor</h4><div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2"><PieChart data={analytics.pieSector} isReport={true} /></div></div>
+                                        </div>
                                     </div>
                                 </div>
 
                                 <div className="mb-8 print:mb-4 no-break">
-                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-4 pb-1 uppercase text-gray-700 print:text-sm">3. Análise de Ocorrências</h2>
-                                    <div className="grid grid-cols-2 gap-8 print:gap-2">
-                                        <div><h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Categoria</h4><div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2"><PieChart data={analytics.pieCategory} isReport={true} /></div></div>
-                                        <div><h4 className="text-xs font-bold text-center mb-2 uppercase text-gray-500">Por Setor</h4><div className="border p-4 rounded flex justify-center bg-gray-50 print:p-2"><PieChart data={analytics.pieSector} isReport={true} /></div></div>
-                                    </div>
+                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">4. Plano de Ação (Supervisão)</h2>
+                                    <textarea className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..." value={actionPlan} onChange={e => setActionPlan(e.target.value)} />
+                                    <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[5rem] print:text-xs">{actionPlan || "Nenhuma observação registrada."}</div>
                                 </div>
-                            </div>
 
-                            <div className="mb-8 print:mb-4 no-break">
-                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">4. Plano de Ação (Supervisão)</h2>
-                                <textarea className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..." value={actionPlan} onChange={e => setActionPlan(e.target.value)} />
-                                <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[5rem] print:text-xs">{actionPlan || "Nenhuma observação registrada."}</div>
-                            </div>
+                                <div className="mb-12 print:mb-4 no-break">
+                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">5. Registro Fotográfico (Evidências de NC)</h2>
+                                    {analytics.filteredInspections.map(insp => {
+                                        // Filtra questões que são NC E que têm fotos
+                                        const ncWithPhotos = Object.entries(insp.evidencias || {}).filter(([qId, photos]) => 
+                                            insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos)
+                                        );
 
-                            <div className="mb-12 print:mb-4 no-break">
-                                <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">5. Registro Fotográfico (Evidências de NC)</h2>
-                                {analytics.filteredInspections.map(insp => {
-                                    // Filtra questões que são NC E que têm fotos
-                                    const ncWithPhotos = Object.entries(insp.evidencias || {}).filter(([qId, photos]) => 
-                                        insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos)
-                                    );
+                                        if (ncWithPhotos.length === 0) return null;
 
-                                    if (ncWithPhotos.length === 0) return null;
-
-                                    return (
-                                        <div key={insp.id} className="mb-6 break-inside-avoid border-b border-gray-100 pb-4">
-                                            <h3 className="font-bold text-sm bg-gray-100 p-2 rounded border border-gray-200 flex justify-between items-center print:text-xs">
-                                                <span>{insp.setor}</span>
-                                                <span className="font-normal text-xs text-gray-500">{new Date(insp.data).toLocaleDateString()} - {insp.responsavel}</span>
-                                            </h3>
-                                            <div className="mt-2 space-y-4">
-                                                {ncWithPhotos.map(([qId, photos]) => {
-                                                    const question = data.questions.find(q => q.id === qId);
-                                                    const obs = insp.observacoes[qId];
-                                                    const imgList = Array.isArray(photos) ? photos : [photos];
-                                                    return (
-                                                        <div key={qId} className="pl-4 border-l-2 border-red-300">
-                                                            <p className="text-xs font-bold text-red-700">{question ? question.pergunta : 'Pergunta removida'}</p>
-                                                            <p className="text-xs text-gray-600 mb-2 print:text-[10px]"><span className="font-bold">Obs:</span> {obs || '-'}</p>
-                                                            <div className="flex gap-2 flex-wrap">
-                                                                {imgList.map((img, i) => (
-                                                                    <img key={i} src={img} className="h-32 border border-gray-300 p-1 bg-white object-contain print:h-24" />
-                                                                ))}
+                                        return (
+                                            <div key={insp.id} className="mb-6 break-inside-avoid border-b border-gray-100 pb-4">
+                                                <h3 className="font-bold text-sm bg-gray-100 p-2 rounded border border-gray-200 flex justify-between items-center print:text-xs">
+                                                    <span>{insp.setor}</span>
+                                                    <span className="font-normal text-xs text-gray-500">{new Date(insp.data).toLocaleDateString()} - {insp.responsavel}</span>
+                                                </h3>
+                                                <div className="mt-2 space-y-4">
+                                                    {ncWithPhotos.map(([qId, photos]) => {
+                                                        const question = questions.find(q => q.id === qId);
+                                                        const obs = insp.observacoes[qId];
+                                                        const imgList = Array.isArray(photos) ? photos : [photos];
+                                                        return (
+                                                            <div key={qId} className="pl-4 border-l-2 border-red-300">
+                                                                <p className="text-xs font-bold text-red-700">{question ? question.pergunta : 'Pergunta removida'}</p>
+                                                                <p className="text-xs text-gray-600 mb-2 print:text-[10px]"><span className="font-bold">Obs:</span> {obs || '-'}</p>
+                                                                <div className="flex gap-2 flex-wrap">
+                                                                    {imgList.map((img, i) => (
+                                                                        <img key={i} src={img} className="h-32 border border-gray-300 p-1 bg-white object-contain print:h-24" />
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    )
-                                                })}
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                                {analytics.filteredInspections.every(insp => 
-                                    Object.entries(insp.evidencias || {}).every(([qId, photos]) => 
-                                        !(insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos))
-                                    )
-                                ) && <p className="text-sm italic text-gray-500 text-center py-4">Nenhuma evidência fotográfica registrada para Não Conformidades neste período.</p>}
-                            </div>
-
-                            <div className="mt-16 flex justify-end print:mt-8 no-break">
-                                <div className="text-center w-1/3"><div className="border-t border-black pt-2 font-bold text-sm print:text-xs">Supervisão da Qualidade</div><div className="text-xs text-gray-500">{new Date().toLocaleDateString()}</div></div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            // VIEW: DASHBOARD
-            if (view === 'dashboard') {
-                return (
-                    <div className="max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col animate-fade-in">
-                        <header className="bg-gradient-to-b from-yellow-500 to-yellow-600 text-stone-900 p-6 rounded-b-3xl shadow-lg mb-6 relative border-b border-yellow-600/30">
-                            <div className="absolute top-6 right-6 flex gap-2">
-                                <button onClick={() => setView('analytics')} className="p-2 bg-white/30 rounded-full hover:bg-white/50 text-stone-900 transition-colors" title="Indicadores"><Icons.Chart /></button>
-                                <button onClick={() => setView('settings')} className="p-2 bg-white/30 rounded-full hover:bg-white/50 text-stone-900 hover:text-stone-700 transition-colors" title="Configurações"><Icons.Gear /></button>
-                            </div>
-                            <div className="mb-4">
-                                {data.logo ? <img src={data.logo} alt="Logo" className="h-16 object-contain mb-2 drop-shadow-md" /> : <h1 className="text-2xl font-bold text-stone-900">Gestão IMAC</h1>}
-                                <p className="text-stone-800 text-sm font-medium">Controle de Qualidade</p>
-                            </div>
-                            <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl border border-yellow-200 shadow-sm">
-                                <div className="flex justify-between items-end mb-2">
-                                    <span className="text-stone-600 text-sm font-bold">Progresso Semanal</span>
-                                    <span className="text-2xl font-bold text-yellow-600">{progress.pct}%</span>
-                                </div>
-                                <div className="w-full bg-stone-200 rounded-full h-3 mb-2"><div className="bg-yellow-500 h-3 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(234,179,8,0.5)]" style={{ width: `${progress.pct}%` }}></div></div>
-                                <p className="text-xs text-stone-500 text-right font-medium">{progress.done}/{progress.total} setores verificados</p>
-                            </div>
-                        </header>
-                        <main className="flex-1 px-6 pb-20">
-                            <div className="mb-6"><label className="block text-sm font-bold text-stone-700 mb-2">Responsável</label><input type="text" value={responsavel} onChange={(e) => setResponsavel(e.target.value)} placeholder="Digite seu nome..." className="w-full p-3 rounded-xl bg-white border border-stone-300 text-stone-900 shadow-sm outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent placeholder-stone-400 transition-all" /></div>
-                            <div className="space-y-3">
-                                {allSetors.length === 0 && <p className="text-center text-stone-500 py-4">Nenhum setor encontrado. Vá em configurações.</p>}
-                                {allSetors.map(setor => {
-                                    const isDone = setoresConcluidos.has(setor);
-                                    const insp = inspectionsThisWeek.find(i => i.setor === setor);
-                                    return (
-                                        <button key={setor} onClick={() => isDone ? (setReportInspection(insp), setView('report')) : handleStartInspection(setor)} className={`w-full p-4 rounded-xl flex items-center justify-between card-shadow transition-all active:scale-95 border ${isDone ? 'bg-white border-yellow-500 shadow-md' : 'bg-white border-stone-200 hover:border-stone-400'}`}>
-                                            <div className="flex items-center gap-3">
-                                                <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isDone ? 'bg-yellow-100 text-yellow-700' : 'bg-stone-100 text-stone-500'}`}>{isDone ? <Icons.Check /> : <Icons.List />}</div>
-                                                <div className="text-left"><p className={`font-bold ${isDone ? 'text-stone-900' : 'text-stone-700'}`}>{setor}</p>{isDone && <p className="text-xs text-yellow-700 font-bold">Nota: {insp.score}%</p>}</div>
-                                            </div>
-                                            {isDone ? <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-bold border border-yellow-200">RELATÓRIO</span> : <span className="h-8 w-8 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center hover:bg-stone-200 hover:text-yellow-600 transition-colors">→</span>}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            {/* BOTÃO FINALIZAR RODADA (100% COMPLETO) */}
-                            {progress.pct === 100 && (
-                                <div className="mt-8 p-4 bg-white rounded-xl border border-yellow-200 text-center animate-fade-in mb-6 shadow-sm">
-                                    <h3 className="text-yellow-600 font-bold text-lg mb-2">Auditoria Completa!</h3>
-                                    <p className="text-stone-600 text-sm mb-4">Todos os setores foram verificados nesta semana.</p>
-                                    <button 
-                                        onClick={handleFinishCycle}
-                                        className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow-lg hover:bg-green-500 transition-all active:scale-95 flex items-center justify-center gap-2"
-                                    >
-                                        <Icons.Check /> Finalizar e Iniciar Nova
-                                    </button>
-                                </div>
-                            )}
-                        </main>
-                    </div>
-                );
-            }
-            
-            // VIEW: ANALYTICS
-            if (view === 'analytics') {
-                return (
-                    <div className="max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col animate-fade-in text-stone-900">
-                        <header className="bg-white p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-200">
-                            <button onClick={() => setView('dashboard')} className="text-sm font-bold text-stone-500 hover:text-yellow-600 transition-colors">← Voltar</button>
-                            <h1 className="font-bold text-yellow-600">Indicadores</h1>
-                            <div className="w-10"></div>
-                        </header>
-
-                        {/* Sub-menu Tabs */}
-                        <div className="flex border-b border-stone-200 bg-white p-2 gap-2 sticky top-[60px] z-10">
-                            <button onClick={() => setAnalyticsTab('weekly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'weekly' ? 'bg-yellow-500 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>Semanal</button>
-                            <button onClick={() => setAnalyticsTab('monthly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'monthly' ? 'bg-yellow-500 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>Mensal</button>
-                        </div>
-
-                        {analyticsTab === 'monthly' && (
-                            <div className="px-6 pt-4">
-                                <label className="text-xs font-bold text-stone-500 uppercase flex items-center gap-2 mb-2"><Icons.Calendar /> Selecionar Mês</label>
-                                <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full p-2 bg-white border border-stone-300 rounded-lg text-stone-800 outline-none focus:border-yellow-500" />
-                            </div>
-                        )}
-
-                        <main className="flex-1 p-6 pb-24 space-y-8">
-                            
-                            {/* Botão para Relatório Gerencial */}
-                            <button onClick={() => setView('management_report')} className="w-full py-3 bg-yellow-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2 hover:bg-yellow-400 transition-all active:scale-95">
-                                <Icons.FileText /> Gerar Relatório Gerencial
-                            </button>
-
-                            {/* Score Geral */}
-                            <div className="bg-white rounded-xl p-6 border border-stone-200 text-center relative overflow-hidden shadow-sm">
-                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400"></div>
-                                <h3 className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">{analyticsTab === 'weekly' ? 'Média Semanal' : 'Média Mensal'}</h3>
-                                <div className="flex justify-center items-end gap-2">
-                                    <span className={`text-5xl font-black ${analytics.avgScore >= 80 ? 'text-green-600' : analytics.avgScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>{analytics.avgScore}%</span>
-                                </div>
-                                <p className="text-[10px] text-stone-400 mt-2">Baseado em {analytics.ranking.length} registros</p>
-                            </div>
-
-                            {/* Desempenho por Auditor */}
-                            <div>
-                                <h3 className="text-sm font-bold text-stone-700 mb-4 flex items-center gap-2"><Icons.Check /> Média por Auditor</h3>
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
-                                    {analytics.auditorPerformance.length === 0 ? <div className="p-6 text-center text-stone-500 text-xs">Sem dados.</div> : (
-                                        <table className="w-full text-left border-collapse">
-                                            <thead>
-                                                <tr className="bg-stone-50 text-[10px] text-stone-500 uppercase border-b border-stone-200">
-                                                    <th className="p-3">Auditor</th>
-                                                    <th className="p-3 text-center">Qtd</th>
-                                                    <th className="p-3 text-right">Nota Média</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="text-sm text-stone-700">
-                                                {analytics.auditorPerformance.map((aud, index) => (
-                                                    <tr key={index} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
-                                                        <td className="p-3 font-medium">{aud.name}</td>
-                                                        <td className="p-3 text-center text-stone-500">{aud.count}</td>
-                                                        <td className={`p-3 text-right font-bold ${aud.avg >= 80 ? 'text-green-600' : 'text-red-600'}`}>{aud.avg}%</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Ranking */}
-                            <div>
-                                <h3 className="text-sm font-bold text-stone-700 mb-4 flex items-center gap-2"><Icons.Chart /> Ranking {analyticsTab === 'weekly' ? 'Semanal' : 'Mensal'}</h3>
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
-                                    {analytics.ranking.length === 0 ? <div className="p-6 text-center text-stone-500 text-xs">Sem dados.</div> : (
-                                        <table className="w-full text-left border-collapse">
-                                            <thead>
-                                                <tr className="bg-stone-50 text-[10px] text-stone-500 uppercase border-b border-stone-200">
-                                                    <th className="p-3">#</th>
-                                                    <th className="p-3">Setor</th>
-                                                    <th className="p-3 text-right">Nota Média</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="text-sm text-stone-700">
-                                                {analytics.ranking.map((insp, index) => (
-                                                    <tr key={insp.setor} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
-                                                        <td className="p-3 font-mono text-stone-400">{index + 1}</td>
-                                                        <td className="p-3 font-medium">{insp.setor}</td>
-                                                        <td className={`p-3 text-right font-bold ${insp.score >= 80 ? 'text-green-600' : 'text-red-600'}`}>{insp.score}%</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Gráficos de Pizza */}
-                            <div className="space-y-8">
-                                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
-                                    <h3 className="text-xs font-bold text-stone-500 uppercase mb-4 text-center">Ocorrências (NC) por Setor</h3>
-                                    <PieChart data={analytics.pieSector} />
-                                </div>
-
-                                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
-                                    <h3 className="text-xs font-bold text-stone-500 uppercase mb-4 text-center">Ocorrências (NC) por Categoria</h3>
-                                    <PieChart data={analytics.pieCategory} />
-                                </div>
-                            </div>
-
-                        </main>
-                    </div>
-                );
-            }
-
-            // VIEW: SETTINGS
-            if (view === 'settings') {
-                const filteredQuestions = data.questions.filter(q => {
-                    const matchSector = adminFilterSetor === 'TODOS' || q.setor === adminFilterSetor || q.setor === 'TODOS';
-                    const searchLower = searchTerm.toLowerCase();
-                    const matchSearch = searchTerm === '' || 
-                                        q.pergunta.toLowerCase().includes(searchLower) || 
-                                        q.grupo.toLowerCase().includes(searchLower) ||
-                                        q.setor.toLowerCase().includes(searchLower);
-                    return matchSector && matchSearch;
-                });
-
-                // Ordenar auditorias por data decrescente
-                const sortedInspections = [...data.inspections].sort((a, b) => new Date(b.data) - new Date(a.data));
-
-                return (
-                    <div className="max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col animate-fade-in text-stone-900">
-                        <header className="bg-white p-4 flex items-center justify-between sticky top-0 z-10 shadow-md border-b border-stone-200">
-                            <button onClick={() => setView('dashboard')} className="text-sm font-bold text-stone-500 hover:text-yellow-600 transition-colors">← Voltar</button>
-                            <h1 className="font-bold text-yellow-600">Configurações</h1>
-                            <div className="w-10"></div>
-                        </header>
-
-                        <div className="flex border-b border-stone-200 bg-white sticky top-[60px] z-10">
-                            <button onClick={() => setSettingsTab('history')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'history' ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-stone-500 hover:text-stone-700'}`}>Histórico</button>
-                            <button onClick={() => setSettingsTab('questions')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'questions' ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-stone-500 hover:text-stone-700'}`}>Perguntas</button>
-                            <button onClick={() => setSettingsTab('system')} className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${settingsTab === 'system' ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-stone-500 hover:text-stone-700'}`}>Sistema</button>
-                        </div>
-
-                        <main className="flex-1 p-6 pb-24">
-                            {/* TAB: HISTÓRICO (AUDITS) */}
-                            {settingsTab === 'history' && (
-                                <div className="space-y-4 animate-fade-in">
-                                    <div className="text-xs text-stone-500 uppercase font-bold mb-2">Auditorias Realizadas ({sortedInspections.length})</div>
-                                    
-                                    {sortedInspections.length === 0 ? (
-                                        <div className="text-center py-10 text-stone-500">
-                                            <p>Nenhuma auditoria registrada.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-3">
-                                            {sortedInspections.map((insp) => (
-                                                <div key={insp.id} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex justify-between items-center group hover:border-yellow-500 transition-colors">
-                                                    <div>
-                                                        <div className="font-bold text-stone-800">{insp.setor}</div>
-                                                        <div className="text-xs text-stone-500 flex gap-2 mt-1">
-                                                            <span>{new Date(insp.data).toLocaleDateString()}</span>
-                                                            <span>•</span>
-                                                            <span>{insp.responsavel}</span>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <div className="flex items-center gap-3">
-                                                        <span className={`text-sm font-bold ${insp.score >= 80 ? 'text-green-600' : 'text-red-600'}`}>
-                                                            {insp.score}%
-                                                        </span>
-                                                        
-                                                        <div className="flex gap-1 pl-2 border-l border-stone-200">
-                                                            <button 
-                                                                onClick={() => handleEditInspection(insp)}
-                                                                className="p-2 text-stone-400 hover:text-yellow-600 hover:bg-stone-100 rounded transition-colors"
-                                                                title="Editar"
-                                                            >
-                                                                <Icons.Edit />
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => handleDeleteAudit(insp.id)}
-                                                                className="p-2 text-stone-400 hover:text-red-500 hover:bg-stone-100 rounded transition-colors"
-                                                                title="Apagar"
-                                                            >
-                                                                <Icons.Trash />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {settingsTab === 'system' && (
-                                <div className="space-y-6 animate-fade-in">
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
-                                        <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.Image /> Identidade Visual</h2>
-                                        <label className="block cursor-pointer group">
-                                            <span className="text-xs font-bold text-stone-500 uppercase mb-2 block group-hover:text-yellow-600 transition-colors">Logo da Empresa</span>
-                                            <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                                            <div className={`mt-1 p-6 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all ${data.logo ? 'border-yellow-400 bg-stone-50' : 'border-stone-300 bg-stone-50 hover:bg-stone-100 hover:border-stone-400'}`}>
-                                                {data.logo ? (
-                                                    <div className="relative"><img src={data.logo} className="h-16 object-contain" /><div className="absolute -bottom-8 left-0 right-0 text-center text-[10px] text-yellow-700">Clique para alterar</div></div>
-                                                ) : (
-                                                    <div className="text-stone-400 flex flex-col items-center"><Icons.Upload /><span className="text-xs mt-2 font-medium">Clique para enviar logo</span></div>
-                                                )}
-                                            </div>
-                                        </label>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
-                                        <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.Database /> Backup e Restauração</h2>
-                                        <div className="mb-4 text-xs text-stone-500 bg-stone-50 p-3 rounded border border-stone-200"><p>Último Backup: <strong className="text-yellow-600">{data.lastBackup ? new Date(data.lastBackup).toLocaleString() : "Nunca realizado"}</strong></p></div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <button onClick={handleDownloadBackup} className="flex flex-col items-center justify-center p-3 bg-white border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 hover:text-yellow-600 transition-all active:scale-95"><Icons.Download /><span className="text-xs font-bold mt-2">Baixar</span></button>
-                                            <label className="flex flex-col items-center justify-center p-3 bg-white border border-stone-300 rounded-lg text-stone-600 hover:bg-stone-50 hover:text-green-600 transition-all cursor-pointer active:scale-95"><Icons.Upload /><span className="text-xs font-bold mt-2">Restaurar</span><input type="file" accept=".json" className="hidden" onChange={handleRestoreBackup} /></label>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* EXCEL IMPORT */}
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-200">
-                                        <h2 className="font-bold text-stone-800 mb-4 flex items-center gap-2"><Icons.FileText /> Importar Planilha Excel</h2>
-                                        <p className="text-xs text-stone-500 mb-4">Carregue um arquivo Excel (.xlsx) onde cada aba é um setor e a coluna B contém a categoria (Limpeza, Estrutural, etc.).</p>
-                                        <label className="w-full flex items-center justify-center p-4 bg-green-50 border border-green-200 border-dashed rounded-lg text-green-700 hover:bg-green-100 transition-all cursor-pointer">
-                                            <Icons.Upload /> <span className="ml-2 font-bold text-sm">Carregar Arquivo .xlsx</span>
-                                            <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleExcelUpload} />
-                                        </label>
-                                    </div>
-                                </div>
-                            )}
-
-                            {settingsTab === 'questions' && (
-                                <div className="space-y-4 animate-fade-in">
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400"><Icons.Search /></div>
-                                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar pergunta, setor..." className="w-full pl-10 p-3 bg-white border border-stone-300 rounded-xl text-stone-800 placeholder-stone-400 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none transition-all" />
-                                    </div>
-                                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                                        <button onClick={() => setAdminFilterSetor('TODOS')} className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-bold transition-colors ${adminFilterSetor === 'TODOS' ? 'bg-yellow-500 text-white' : 'bg-white text-stone-600 border border-stone-300'}`}>Todos</button>
-                                        {allSetors.map(s => (
-                                            <button key={s} onClick={() => setAdminFilterSetor(s)} className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-bold transition-colors ${adminFilterSetor === s ? 'bg-yellow-500 text-white' : 'bg-white text-stone-600 border border-stone-300'}`}>{s}</button>
-                                        ))}
-                                    </div>
-                                    <div className="flex justify-between items-center text-xs text-stone-500 px-1"><span>{filteredQuestions.length} perguntas encontradas</span></div>
-                                    <div className="space-y-3">
-                                        {filteredQuestions.map(q => (
-                                            <div key={q.id} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex justify-between items-start hover:border-yellow-400 transition-colors group">
-                                                <div className="flex-1 pr-3">
-                                                    <div className="flex gap-2 mb-2 flex-wrap">
-                                                        <span className="text-[10px] bg-stone-100 text-stone-600 px-2 py-0.5 rounded font-bold border border-stone-200">{q.setor}</span>
-                                                        <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-bold border border-yellow-200">{q.grupo}</span>
-                                                    </div>
-                                                    <p className="text-sm text-stone-800 font-medium leading-snug">{q.pergunta}</p>
-                                                </div>
-                                                <div className="flex flex-col gap-2 opacity-100 sm:opacity-50 sm:group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={() => { setEditingQ(q); setIsModalOpen(true); }} className="bg-stone-100 text-stone-500 hover:text-yellow-600 hover:bg-stone-200 p-2 rounded-lg transition-colors"><Icons.Edit /></button>
-                                                    <button onClick={() => handleDeleteQuestion(q.id)} className="bg-stone-100 text-stone-500 hover:text-red-500 hover:bg-stone-200 p-2 rounded-lg transition-colors"><Icons.Trash /></button>
+                                                        )
+                                                    })}
                                                 </div>
                                             </div>
-                                        ))}
-                                        {filteredQuestions.length === 0 && <div className="text-center py-10 text-stone-500"><p>Nenhuma pergunta encontrada.</p></div>}
-                                    </div>
+                                        )
+                                    })}
+                                    {analytics.filteredInspections.every(insp => 
+                                        Object.entries(insp.evidencias || {}).every(([qId, photos]) => 
+                                            !(insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos))
+                                        )
+                                    ) && <p className="text-sm italic text-gray-500 text-center py-4">Nenhuma evidência fotográfica registrada para Não Conformidades neste período.</p>}
                                 </div>
-                            )}
-                        </main>
-                        {settingsTab === 'questions' && (
-                            <button onClick={() => { setEditingQ(null); setIsModalOpen(true); }} className="fixed bottom-6 right-6 bg-yellow-500 text-white h-14 w-14 rounded-full shadow-lg shadow-yellow-500/30 flex items-center justify-center hover:bg-yellow-600 hover:scale-105 transition-all z-20"><Icons.Plus /></button>
-                        )}
-                        {isModalOpen && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay backdrop-blur-sm">
-                                <div className="bg-white border border-stone-200 rounded-xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in duration-200">
-                                    <h2 className="text-lg font-bold mb-4 text-yellow-600">{editingQ ? 'Editar Pergunta' : 'Nova Pergunta'}</h2>
-                                    <form onSubmit={handleSaveQuestion} className="space-y-4">
-                                        <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Setor</label><input name="setor" defaultValue={editingQ?.setor || ''} list="setores-list" className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg text-sm text-stone-800 focus:border-yellow-500 outline-none" required placeholder="Ex: ESTOQUE" /><datalist id="setores-list">{allSetors.map(s => <option key={s} value={s} />)}</datalist></div>
-                                        <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Grupo/Categoria</label><input name="grupo" defaultValue={editingQ?.grupo || ''} className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg text-sm text-stone-800 focus:border-yellow-500 outline-none" required placeholder="Ex: LIMPEZA" /></div>
-                                        <div><label className="block text-xs font-bold text-stone-500 uppercase mb-1">Pergunta</label><textarea name="pergunta" defaultValue={editingQ?.pergunta || ''} className="w-full p-3 bg-stone-50 border border-stone-300 rounded-lg text-sm text-stone-800 h-24 resize-none focus:border-yellow-500 outline-none" required placeholder="Digite a pergunta..." /></div>
-                                        <div className="flex gap-2 pt-2"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 border border-stone-300 rounded-lg text-stone-600 font-bold hover:bg-stone-100">Cancelar</button><button type="submit" className="flex-1 py-3 bg-yellow-500 text-white rounded-lg font-bold hover:bg-yellow-600">Salvar</button></div>
-                                    </form>
+
+                                <div className="mt-16 flex justify-end print:mt-8 no-break">
+                                    <div className="text-center w-1/3"><div className="border-t border-black pt-2 font-bold text-sm print:text-xs">Supervisão da Qualidade</div><div className="text-xs text-gray-500">{new Date().toLocaleDateString()}</div></div>
                                 </div>
                             </div>
-                        )}
-                    </div>
-                );
-            }
-            
-            // VIEW: INSPECTION
-            if (view === 'inspection') {
-                return (
-                    <div className="max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col animate-fade-in text-stone-900">
-                        <header className="sticky top-0 z-10 bg-white border-b border-stone-200 px-6 py-4 shadow-md">
-                            <div className="flex justify-between items-start mb-2">
-                                <div><h2 className="text-lg font-bold text-stone-800">{selectedSetor}</h2><p className="text-xs text-stone-500">Resp: {responsavel}</p></div>
-                                <div className="text-right">
-                                    <div className="flex flex-col items-end">
-                                        <label className="text-[10px] text-stone-400 font-bold uppercase">Data</label>
-                                        <input 
-                                            type="date" 
-                                            value={inspectionDate} 
-                                            onChange={(e) => setInspectionDate(e.target.value)} 
-                                            className="bg-transparent text-stone-600 text-sm font-bold text-right outline-none focus:text-yellow-600"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex justify-between items-center pt-2 border-t border-stone-200 mt-2">
-                                <div className="text-center w-1/2 border-r border-stone-200">
-                                    <span className={`text-2xl font-black ${scores.real >= 80 ? 'text-green-600' : 'text-red-600'}`}>{scores.real}%</span>
-                                    <span className="text-[10px] font-bold text-stone-400 block uppercase">Real</span>
-                                </div>
-                                <div className="text-center w-1/2">
-                                    <span className="text-xl font-bold text-yellow-600">{scores.bonus}%</span>
-                                    <span className="text-[10px] font-bold text-yellow-700 block uppercase">Bônus</span>
-                                </div>
-                            </div>
-                        </header>
-                        <main className="flex-1 p-6 space-y-6 pb-24 overflow-y-auto">
-                            {currentQuestions.map((q, idx) => {
-                                const prevNC = previousNCs[q.id];
-                                return (
-                                <div key={q.id || idx} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="mb-2"><span className="text-[10px] font-bold text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-1 rounded uppercase">{q.grupo}</span><p className="mt-2 text-stone-800 font-medium leading-snug">{q.pergunta}</p></div>
-                                    
-                                    {/* ALERTA DE NC ANTERIOR */}
-                                    {prevNC && (
-                                        <div className="mb-3 p-2 bg-yellow-50 border-l-2 border-yellow-400 rounded-r text-xs text-yellow-800 flex gap-2 items-start">
-                                            <Icons.Alert />
-                                            <div>
-                                                <span className="font-bold block text-yellow-700">Atenção (Última Inspeção):</span>
-                                                "{prevNC}"
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="flex gap-2">
-                                        {['C', 'NC', 'NA'].map(opt => (
-                                            <button key={opt} onClick={() => setAnswers(p => ({...p, [q.id]: opt}))} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all shadow-sm ${answers[q.id] === opt ? (opt === 'C' ? 'bg-green-600 text-white shadow-md' : opt === 'NC' ? 'bg-red-600 text-white shadow-md' : 'bg-stone-500 text-white') : 'bg-white border border-stone-300 text-stone-500 hover:bg-stone-50'}`}>{opt}</button>
-                                        ))}
-                                    </div>
-                                    
-                                    {/* Campo NC Expandido */}
-                                    {answers[q.id] === 'NC' && (
-                                        <div className="mt-2 space-y-2 animate-fade-in">
-                                            <input type="text" placeholder="Descreva o problema..." value={obs[q.id] || ''} onChange={(e) => setObs(p => ({...p, [q.id]: e.target.value}))} className="w-full text-sm p-3 bg-red-50 border-red-200 rounded-lg text-red-800 focus:border-red-400 outline-none border placeholder-red-300" />
-                                            
-                                            {/* Galeria de Fotos */}
-                                            {evidences[q.id] && evidences[q.id].length > 0 && (
-                                                <div className="flex gap-2 overflow-x-auto py-2">
-                                                    {evidences[q.id].map((img, i) => (
-                                                        <div key={i} className="relative w-16 h-16 shrink-0 group">
-                                                            <img src={img} className="w-full h-full object-cover rounded border border-stone-300" />
-                                                            <button onClick={() => removePhoto(q.id, i)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow-md w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-red-600">x</button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            <div className="flex items-center gap-2">
-                                                <label className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed cursor-pointer transition-colors ${evidences[q.id] && evidences[q.id].length > 0 ? 'border-green-500 text-green-600 bg-green-50' : 'border-stone-400 text-stone-500 hover:border-stone-600 hover:text-stone-700 bg-white'}`}>
-                                                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handlePhotoUpload(q.id, e)} />
-                                                    <Icons.Camera />
-                                                    <span className="text-xs font-bold">Adicionar Foto</span>
-                                                </label>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            );})}
-
-                            {/* Área de Assinatura */}
-                            <div className="mt-8 border-t border-stone-300 pt-6">
-                                <h3 className="text-sm font-bold text-stone-700 mb-2 flex items-center gap-2"><Icons.Pen /> Assinatura do Responsável</h3>
-                                <p className="text-xs text-stone-500 mb-2">Toque no botão para assinar:</p>
-                                <button 
-                                    onClick={() => setIsSigning(true)}
-                                    className={`w-full py-3 rounded-lg border border-stone-300 flex items-center justify-center gap-2 transition-all ${signature ? 'bg-green-50 text-green-600 border-green-500' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
-                                >
-                                    {signature ? <><Icons.Check /> Assinatura Registrada</> : <><Icons.Pen /> Abrir Painel de Assinatura</>}
-                                </button>
-                                {signature && <img src={signature} className="mt-2 h-12 object-contain opacity-70" />}
-                            </div>
-
-                        </main>
-                        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-stone-200 flex gap-3 max-w-md mx-auto shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                            <button onClick={() => setView('dashboard')} className="px-6 py-3 rounded-xl border border-stone-300 font-bold text-stone-500 hover:bg-stone-50 hover:text-stone-700">Cancelar</button>
-                            <button onClick={handleSaveInspection} className="flex-1 bg-yellow-500 text-white rounded-xl font-bold shadow-lg shadow-yellow-500/20 hover:bg-yellow-600 transition-colors">Salvar Inspeção</button>
                         </div>
-                        
-                        {/* Modal de Assinatura */}
-                        {isSigning && (
-                            <SignaturePad 
-                                onSave={handleSaveSignature} 
-                                onCancel={() => setIsSigning(false)}
-                                initialData={signature}
-                            />
-                        )}
-                    </div>
-                );
-            }
-            return null;
+                    )}
+
+                    {/* MODAL ASSINATURA */}
+                    {isSigning && <SignaturePad onSave={handleSaveSignature} onCancel={() => setIsSigning(false)} initialData={signature} />}
+                </div>
+            );
+        }
+
+        function App() {
+            return (
+                <ToastProvider>
+                    <AppContent />
+                </ToastProvider>
+            );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
