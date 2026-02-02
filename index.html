@@ -24,7 +24,6 @@
         .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
         .modal-overlay { background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); }
         
-        /* Oculta elementos de impressão na tela normal */
         .print-only { display: none; }
 
         /* Toast Animations */
@@ -32,14 +31,14 @@
         .toast-enter { animation: slideIn 0.3s ease-out forwards; }
 
         @media print {
-            @page { size: A4 landscape; margin: 10mm; } /* Paisagem */
+            @page { size: A4 landscape; margin: 10mm; }
             
             body { 
                 background-color: white; 
                 color: black; 
                 -webkit-print-color-adjust: exact !important; 
                 print-color-adjust: exact !important; 
-                font-size: 9pt; 
+                font-size: 10pt; 
             }
             
             .no-print { display: none !important; }
@@ -54,16 +53,46 @@
                 box-shadow: none !important;
             }
             
-            .print-border { border: 1px solid #ddd !important; padding: 10px !important; border-radius: 4px; }
-            .print-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+            .print-border { border: 1px solid #ccc !important; padding: 15px !important; border-radius: 8px; }
+            
+            /* Grids de Impressão */
+            .print-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
             .print-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+            
+            /* Correção do Header do Relatório Individual */
+            .print-header-grid {
+                display: grid;
+                grid-template-columns: 2fr 1fr 1fr 1fr; /* Setor ganha o dobro de espaço */
+                gap: 15px;
+                background-color: #f9fafb;
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+                padding: 10px;
+                margin-bottom: 15px;
+            }
             
             .no-break { break-inside: avoid; page-break-inside: avoid; }
             .print-img-small { height: 40px !important; width: auto !important; }
-            .print-img-evidence { height: 80px !important; width: auto !important; object-fit: contain; border: 1px solid #eee; display: block; }
+            .print-img-evidence { height: 80px !important; width: auto !important; object-fit: contain; border: 1px solid #eee; display: block; background: #fff; }
             
-            .chart-container-print { display: flex; justify-content: center; gap: 20px; page-break-inside: avoid; }
-            .chart-item-print { flex: 1; border: 1px solid #eee; padding: 5px; border-radius: 8px; }
+            /* Correção Específica dos Gráficos na Impressão */
+            .chart-container-print { 
+                display: grid; 
+                grid-template-columns: 1fr 1fr; 
+                gap: 20px; 
+                page-break-inside: avoid; 
+            }
+            .chart-item-print { 
+                border: 1px solid #eee; 
+                padding: 10px; 
+                border-radius: 8px; 
+                background: #fff;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            /* Forçar tamanho do SVG na impressão */
+            .print-chart-svg { width: 80px !important; height: 80px !important; }
         }
         .animate-fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -178,21 +207,17 @@
 
         const getWeekID = (dateStr, offset = 0) => {
             try {
-                // CORREÇÃO CRÍTICA: Manuseio de Fuso Horário
-                // Se dateStr for passado (YYYY-MM-DD), força o horário para 12:00
-                // para evitar que o fuso horário (GMT-3) empurre para o dia anterior
                 let now;
                 if (!dateStr) {
                     now = new Date();
                 } else {
-                    if (dateStr.length === 10) { // YYYY-MM-DD
+                    if (dateStr.length === 10) { 
                         now = new Date(dateStr + 'T12:00:00');
                     } else {
                         now = new Date(dateStr);
                     }
                 }
                 
-                // Aplica o offset de semanas
                 now.setDate(now.getDate() + (offset * 7));
                 
                 const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
@@ -259,7 +284,7 @@
             }
             return (
                 <div className="flex flex-row items-center justify-center gap-4">
-                    <div className="w-32 h-32 shrink-0 relative">
+                    <div className={isReport ? "w-24 h-24 shrink-0 relative print-chart-svg" : "w-32 h-32 shrink-0 relative"}>
                         <svg viewBox="-1 -1 2 2" className="transform -rotate-90">
                             {data.map((slice, i) => {
                                 if (slice.value === 0) return null;
@@ -385,7 +410,6 @@
             const [weekOffset, setWeekOffset] = useState(0); 
             const [lightboxImg, setLightboxImg] = useState(null);
             
-            // Inicializa a data com o offset correto do fuso horário local para evitar problemas
             const today = new Date();
             const localISODate = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
             const [inspectionDate, setInspectionDate] = useState(localISODate);
@@ -449,7 +473,6 @@
                 loadData();
             }, []);
 
-            // Usa a data local correta para o cálculo da semana
             const currentWeekId = getWeekID(localISODate, weekOffset);
             const weekId = getWeekID(inspectionDate); 
             
@@ -512,7 +535,6 @@
                 setInspectionSearch('');
                 const now = new Date();
                 now.setDate(now.getDate() + (weekOffset * 7));
-                // Formata para local YYYY-MM-DD
                 const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
                 setInspectionDate(localDate);
                 
@@ -635,7 +657,6 @@
                     }
                     setActionPlan(sugestao);
 
-                    // Importante: Definir o estado ANTES de mudar a view
                     setReportInspection(newInspection);
                     setView('report');
                     toast("Inspeção salva com sucesso!");
@@ -884,10 +905,10 @@
 
             // RENDERIZAÇÃO DAS TELAS
             return (
-                <div className={view === 'report' ? "min-h-screen bg-white" : "max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col text-stone-900 shadow-2xl relative"}>
+                <div className={view === 'management_report' || view === 'report' ? "min-h-screen bg-white" : "max-w-md mx-auto min-h-screen bg-stone-100 flex flex-col text-stone-900 shadow-2xl relative"}>
                     
                     {/* LIGHTBOX (Só renderiza se não for report) */}
-                    {view !== 'report' && <Lightbox src={lightboxImg} onClose={() => setLightboxImg(null)} />}
+                    {view !== 'management_report' && view !== 'report' && <Lightbox src={lightboxImg} onClose={() => setLightboxImg(null)} />}
 
                     {/* VIEW: DASHBOARD */}
                     {view === 'dashboard' && (
@@ -1202,7 +1223,12 @@
                                                         <tr key={insp.setor} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
                                                             <td className="p-3 font-mono text-stone-400">{index + 1}</td>
                                                             <td className="p-3 font-medium">{insp.setor}</td>
-                                                            <td className={`p-3 text-right font-bold ${insp.score >= 85 ? 'text-green-600' : 'text-red-600'}`}>{insp.score}%</td>
+                                                            <td className={`p-3 text-right font-bold ${insp.score >= 85 ? 'text-green-600' : 'text-red-600'}`}>
+                                                                <div className="flex flex-col items-end">
+                                                                    <span>{insp.score}%</span>
+                                                                    <StarRating score={insp.score} />
+                                                                </div>
+                                                            </td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -1246,14 +1272,14 @@
                             </div>
                             <div className="border border-gray-300 p-8 print-border">
                                 <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
-                                    <div><h1 className="text-2xl font-bold uppercase">Relatório de Inspeção</h1><p className="text-sm text-gray-600">Gestão de Qualidade IMAC</p></div>
+                                    <div><h1 className="text-2xl font-bold uppercase">Relatório de Inspeção</h1><p className="text-sm text-gray-600">Gestão de Qualidade - IMAC</p></div>
                                     {logo && <img src={logo} className="h-12 object-contain print-img-small" />}
                                 </div>
-                                <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-                                    <div><span className="font-bold">Setor:</span> {reportInspection.setor}</div>
-                                    <div><span className="font-bold">Data:</span> {new Date(reportInspection.data).toLocaleDateString()}</div>
-                                    <div><span className="font-bold">Auditor:</span> {reportInspection.responsavel}</div>
-                                    <div className="flex items-center gap-2"><span className="font-bold">Nota:</span> <span className={reportInspection.score >= 85 ? 'text-green-700' : 'text-red-700'}>{reportInspection.score}%</span> <StarRating score={reportInspection.score} /></div>
+                                <div className="print-header-grid">
+                                    <div><span className="font-bold block text-xs uppercase text-gray-500">Setor</span><span className="text-lg font-bold">{reportInspection.setor}</span></div>
+                                    <div><span className="font-bold block text-xs uppercase text-gray-500">Data</span><span>{new Date(reportInspection.data).toLocaleDateString()}</span></div>
+                                    <div><span className="font-bold block text-xs uppercase text-gray-500">Auditor</span><span>{reportInspection.responsavel}</span></div>
+                                    <div><span className="font-bold block text-xs uppercase text-gray-500">Nota</span><div className="flex items-center gap-1"><span className={reportInspection.score >= 85 ? 'text-green-700 font-black text-lg' : 'text-red-700 font-black text-lg'}>{reportInspection.score}%</span><StarRating score={reportInspection.score} /></div></div>
                                 </div>
                                 <div className="mb-8">
                                     <h3 className="font-bold border-b border-gray-300 mb-4 pb-1">Não Conformidades</h3>
@@ -1334,11 +1360,31 @@
                                     <div className="grid grid-cols-2 gap-8 mb-8 print:mb-4 print:gap-4 no-break">
                                         <div>
                                             <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-green-700 print:text-xs">Top 3 - Melhores</h2>
-                                            <ul className="text-sm space-y-2 print:text-xs">{analytics.ranking.slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><div className="flex flex-col items-end"><span className="font-bold">{r.score}%</span><StarRating score={r.score} /></div></li>))}</ul>
+                                            <ul className="text-sm space-y-2 print:text-xs">
+                                                {analytics.ranking.slice(0, 3).map((r, i) => (
+                                                    <li key={i} className="grid grid-cols-[1fr_auto] gap-4 border-b border-gray-100 pb-1">
+                                                        <span>{i+1}. {r.setor}</span>
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="font-bold">{r.score}%</span>
+                                                            <StarRating score={r.score} />
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
                                         </div>
                                         <div>
                                             <h2 className="text-sm font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-red-700 print:text-xs">Atenção - Menores</h2>
-                                            <ul className="text-sm space-y-2 print:text-xs">{[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (<li key={i} className="flex justify-between border-b border-gray-100 pb-1"><span>{i+1}. {r.setor}</span><div className="flex flex-col items-end"><span className="font-bold text-red-600">{r.score}%</span><StarRating score={r.score} /></div></li>))}</ul>
+                                            <ul className="text-sm space-y-2 print:text-xs">
+                                                {[...analytics.ranking].reverse().slice(0, 3).map((r, i) => (
+                                                    <li key={i} className="grid grid-cols-[1fr_auto] gap-4 border-b border-gray-100 pb-1">
+                                                        <span>{i+1}. {r.setor}</span>
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="font-bold text-red-600">{r.score}%</span>
+                                                            <StarRating score={r.score} />
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
                                         </div>
                                     </div>
 
@@ -1366,7 +1412,6 @@
                                 <div className="mb-12 print:mb-4 no-break">
                                     <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">5. Registro Fotográfico (Evidências de NC)</h2>
                                     {analytics.filteredInspections.map(insp => {
-                                        // Filtra questões que são NC E que têm fotos
                                         const ncWithPhotos = Object.entries(insp.evidencias || {}).filter(([qId, photos]) => 
                                             insp.respostas[qId] === 'NC' && photos && (Array.isArray(photos) ? photos.length > 0 : photos)
                                         );
@@ -1414,6 +1459,8 @@
                         </div>
                     )}
 
+                    {/* MODAL ASSINATURA */}
+                    {isSigning && <SignaturePad onSave={handleSaveSignature} onCancel={() => setIsSigning(false)} initialData={signature} />}
                     {/* MODAL EDITAR PERGUNTA */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
@@ -1440,9 +1487,6 @@
                             </div>
                         </div>
                     )}
-
-                    {/* MODAL ASSINATURA */}
-                    {isSigning && <SignaturePad onSave={handleSaveSignature} onCancel={() => setIsSigning(false)} initialData={signature} />}
                 </div>
             );
         }
