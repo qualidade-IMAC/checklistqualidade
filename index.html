@@ -924,32 +924,27 @@
                     filteredInspections = inspections.filter(i => i.data.startsWith(selectedMonth));
                 }
 
-                // CÁLCULO DE MÉDIAS (AGORA PRIORIZANDO BONUS/GRATIFICAÇÃO)
+                // CÁLCULO DE MÉDIAS
                 const totalScore = filteredInspections.reduce((acc, curr) => acc + (curr.score || 0), 0);
                 const avgScore = filteredInspections.length ? Math.round(totalScore / filteredInspections.length) : 0;
                 
-                // Média Gratificação (Principal)
                 const totalBonusScore = filteredInspections.reduce((acc, curr) => acc + (curr.bonusScore !== undefined ? curr.bonusScore : curr.score || 0), 0);
                 const avgBonusScore = filteredInspections.length ? Math.round(totalBonusScore / filteredInspections.length) : 0;
 
-                let ranking = [];
-                if (analyticsTab === 'weekly') {
-                    // Ranking ordenado pela NOTA DE GRATIFICAÇÃO (bonusScore)
-                    ranking = [...filteredInspections].sort((a, b) => (b.bonusScore || b.score) - (a.bonusScore || a.score));
-                } else {
-                    const grouped = {};
-                    filteredInspections.forEach(i => {
-                        if(!grouped[i.setor]) grouped[i.setor] = { total: 0, count: 0 };
-                        // Soma Bonus Score para o ranking
-                        grouped[i.setor].total += (i.bonusScore !== undefined ? i.bonusScore : i.score || 0);
-                        grouped[i.setor].count += 1;
-                    });
-                    ranking = Object.entries(grouped).map(([setor, val]) => ({
-                        setor, 
-                        score: Math.round(val.total / val.count),
-                        count: val.count
-                    })).sort((a, b) => b.score - a.score);
-                }
+                // RANKING - AGORA SEMPRE PELA GRATIFICAÇÃO (BÔNUS)
+                const grouped = {};
+                filteredInspections.forEach(i => {
+                    if(!grouped[i.setor]) grouped[i.setor] = { total: 0, count: 0 };
+                    // Usa sempre o bonusScore (ou score se não tiver bonus) para somar
+                    grouped[i.setor].total += (i.bonusScore !== undefined ? i.bonusScore : i.score || 0);
+                    grouped[i.setor].count += 1;
+                });
+                
+                let ranking = Object.entries(grouped).map(([setor, val]) => ({
+                    setor, 
+                    score: Math.round(val.total / val.count), // Esta agora é a média da gratificação
+                    count: val.count
+                })).sort((a, b) => b.score - a.score);
 
                 const ncBySector = {};
                 const ncByCategory = {};
@@ -959,7 +954,7 @@
                 filteredInspections.forEach(insp => {
                     inspectionsByAuditor[insp.responsavel] = (inspectionsByAuditor[insp.responsavel] || 0) + 1;
                     if (!auditorScores[insp.responsavel]) auditorScores[insp.responsavel] = { total: 0, count: 0 };
-                    // Auditor avaliado pela nota de gratificação também
+                    // Auditor também avaliado pela gratificação
                     auditorScores[insp.responsavel].total += (insp.bonusScore !== undefined ? insp.bonusScore : insp.score || 0);
                     auditorScores[insp.responsavel].count += 1;
 
@@ -1526,7 +1521,7 @@
                                                 <tr className="bg-gray-100 border-b border-gray-200 text-gray-600 uppercase text-[10px]">
                                                     <th className="p-3 font-bold text-center w-12">Pos.</th>
                                                     <th className="p-3 font-bold">Setor</th>
-                                                    <th className="p-3 font-bold text-right">Nota</th>
+                                                    <th className="p-3 font-bold text-right">Nota (Gratificação)</th>
                                                     <th className="p-3 font-bold text-right">Classificação</th>
                                                 </tr>
                                             </thead>
