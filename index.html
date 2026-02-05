@@ -1050,6 +1050,15 @@
                 return { avgScore, avgBonusScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText, filteredInspections };
             }, [inspections, questions, weekId, analyticsTab, selectedMonth, analyticsSelectedDate]);
 
+            // FILTER HISTORY
+            const filteredHistory = useMemo(() => {
+                return inspections.filter(insp => {
+                    const d = insp.data.split('T')[0];
+                    return d >= historyStartDate && d <= historyEndDate;
+                }).sort((a,b) => new Date(b.data) - new Date(a.data));
+            }, [inspections, historyStartDate, historyEndDate]);
+
+
             if (view === 'loading') return <div className="flex h-screen bg-stone-100 items-center justify-center flex-col gap-4"><div className="animate-spin rounded-full h-12 w-12 border-b-4 border-yellow-500"></div><p className="text-stone-500 font-bold animate-pulse">Carregando Sistema...</p></div>;
 
             // RENDERIZAÇÃO DAS TELAS
