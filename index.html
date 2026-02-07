@@ -1876,14 +1876,76 @@
                                     </div>
                                 </div>
 
+                                {/* NOVA SEÇÃO: DETALHAMENTO DE PENDÊNCIAS (PLANO DE AÇÃO) */}
                                 <div className="mb-8 print:mb-4 no-break">
-                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">4. Plano de Ação (Supervisão)</h2>
+                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">4. Detalhamento de Pendências e Prazos (Plano de Ação)</h2>
+                                    
+                                    {Object.keys(groupedIssues.pending).length === 0 ? (
+                                        <p className="text-sm text-gray-500 italic p-4 border rounded bg-gray-50 text-center">Nenhuma pendência em aberto no momento.</p>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {Object.entries(groupedIssues.pending).map(([setor, issues]) => (
+                                                <div key={setor} className="border rounded-lg border-gray-200 overflow-hidden break-inside-avoid">
+                                                    <div className="bg-gray-100 px-3 py-2 border-b border-gray-200 font-bold text-xs uppercase text-gray-700">
+                                                        {setor}
+                                                    </div>
+                                                    <table className="w-full text-left border-collapse text-xs">
+                                                        <thead>
+                                                            <tr className="bg-gray-50 text-gray-500">
+                                                                <th className="p-2 border-b border-gray-100 w-16">Data</th>
+                                                                <th className="p-2 border-b border-gray-100 w-24">Categoria</th>
+                                                                <th className="p-2 border-b border-gray-100">Ocorrência / NC</th>
+                                                                <th className="p-2 border-b border-gray-100 w-20">Prazo</th>
+                                                                <th className="p-2 border-b border-gray-100 w-20 text-center">Status</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-gray-100">
+                                                            {issues.map((issue, idx) => {
+                                                                const today = new Date().toISOString().split('T')[0];
+                                                                const isLate = issue.deadline && issue.deadline < today;
+                                                                const q = questions.find(qu => qu.id === issue.questionId); // Buscar info da pergunta original
+                                                                
+                                                                return (
+                                                                    <tr key={idx}>
+                                                                        <td className="p-2 text-gray-600">{formatDateDisplay(issue.date.split('T')[0])}</td>
+                                                                        <td className="p-2">
+                                                                            <span className="text-[9px] font-bold bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded border border-stone-200 uppercase">
+                                                                                {q?.grupo || 'Geral'}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="p-2 font-medium text-gray-800">
+                                                                            {issue.question}
+                                                                            {issue.obs && <div className="text-[10px] text-gray-500 italic font-normal mt-0.5">Obs: {issue.obs}</div>}
+                                                                        </td>
+                                                                        <td className="p-2 text-gray-600 font-mono">{issue.deadline ? formatDateDisplay(issue.deadline) : '-'}</td>
+                                                                        <td className="p-2 text-center">
+                                                                            {isLate ? (
+                                                                                <span className="text-[9px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200">VENCIDO</span>
+                                                                            ) : issue.deadline ? (
+                                                                                <span className="text-[9px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">NO PRAZO</span>
+                                                                            ) : (
+                                                                                <span className="text-[9px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded border border-gray-200">SEM DATA</span>
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="mb-8 print:mb-4 no-break">
+                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">5. Observações Gerais (Supervisão)</h2>
                                     <textarea className="w-full h-40 p-4 border border-gray-300 rounded text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-black outline-none resize-none no-print" placeholder="Digite aqui as ações corretivas, prazos ou observações para a reunião..." value={actionPlan} onChange={e => setActionPlan(e.target.value)} />
-                                    <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[5rem] print:text-xs">{actionPlan || "Nenhuma observação registrada."}</div>
+                                    <div className="print-only whitespace-pre-wrap text-sm text-justify border border-gray-200 p-4 rounded min-h-[5rem] print:text-xs">{actionPlan || "Nenhuma observação adicional registrada."}</div>
                                 </div>
 
                                 <div className="mb-12 print:mb-4 no-break">
-                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">5. Registro Fotográfico (Evidências de NC)</h2>
+                                    <h2 className="text-lg font-bold border-b border-gray-300 mb-3 pb-1 uppercase text-gray-700 print:text-sm">6. Registro Fotográfico (Evidências de NC)</h2>
                                     <div className="print-grid-2-cols">
                                         {analytics.filteredInspections.map(insp => {
                                             const ncWithPhotos = Object.entries(insp.evidencias || {}).filter(([qId, photos]) => 
