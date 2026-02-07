@@ -121,7 +121,13 @@
                 align-items: center;
                 page-break-inside: avoid; /* Evita quebrar gráfico ao meio */
             }
-            .print-chart-svg { width: 60px !important; height: 60px !important; }
+            /* Forçar tamanho do SVG na impressão */
+            .print-chart-svg { 
+                width: 80px !important; 
+                height: 80px !important; 
+                min-width: 80px !important; 
+                display: block !important; 
+            }
             
             /* Ajustes de Tipografia */
             h1 { font-size: 14pt !important; margin: 0 !important; }
@@ -263,7 +269,7 @@
             Archive: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>
         };
 
-        // --- MANIPULAÇÃO DE DATAS SEGURA (Sem Fuso) ---
+        // --- HELPER FUNCTIONS ---
         const getLocalDateString = (dateObj) => {
             if (!dateObj) return new Date().toISOString().slice(0, 10);
             const year = dateObj.getFullYear();
@@ -306,16 +312,6 @@
             } catch (e) { return "INVALID-DATE"; }
         };
 
-        const getWeekRange = (offset = 0) => {
-            const curr = new Date();
-            curr.setDate(curr.getDate() + (offset * 7));
-            const first = curr.getDate() - curr.getDay();
-            const last = first + 6;
-            const firstday = new Date(curr.setDate(first)).toLocaleDateString('pt-BR');
-            const lastday = new Date(curr.setDate(last)).toLocaleDateString('pt-BR');
-            return `${firstday} até ${lastday}`;
-        }
-        
         const getWeekRangeFromDate = (dateStr) => {
              const curr = createSafeDate(dateStr);
              const day = curr.getDay(); 
@@ -369,14 +365,16 @@
             if (total === 0) return <div className={`text-center text-xs h-32 flex items-center justify-center ${isReport ? 'text-black' : 'text-stone-600'}`}>Sem dados</div>;
             let cumulativePercent = 0;
             const getCoordinatesForPercent = (percent) => {
-                const x = Math.cos(2 * Math.PI * percent);
-                const y = Math.sin(2 * Math.PI * percent);
+                // Ajuste matemático para PDF (inicia no topo)
+                const x = Math.cos(2 * Math.PI * percent - Math.PI / 2);
+                const y = Math.sin(2 * Math.PI * percent - Math.PI / 2);
                 return [x, y];
             }
             return (
                 <div className="flex flex-row items-center justify-center gap-4">
-                    <div className={isReport ? "w-24 h-24 shrink-0 relative print-chart-svg" : "w-32 h-32 shrink-0 relative"}>
-                        <svg viewBox="-1 -1 2 2" className="transform -rotate-90">
+                     {/* Estilo inline para forçar tamanho no PDF */}
+                    <div style={{ width: isReport ? '100px' : '128px', height: isReport ? '100px' : '128px' }} className="shrink-0 relative print-chart-svg">
+                        <svg viewBox="-1 -1 2 2" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                             {data.map((slice, i) => {
                                 if (slice.value === 0) return null;
                                 const startPercent = cumulativePercent;
@@ -435,7 +433,6 @@
                 const ctx = canvas.getContext('2d');
                 ctx.lineWidth = 2;
                 ctx.strokeStyle = "#000"; 
-                // Definir tamanho do canvas explicitamente para evitar distorção
                 canvas.width = canvas.offsetWidth;
                 canvas.height = canvas.offsetHeight;
                 
@@ -516,7 +513,7 @@
             const [responsavel, setResponsavel] = useState('');
             const [questions, setQuestions] = useState([]);
             const [inspections, setInspections] = useState([]);
-            const [resolutions, setResolutions] = useState([]); // NEW STATE
+            const [resolutions, setResolutions] = useState([]); 
             const [logo, setLogo] = useState(null);
             const [lastBackup, setLastBackup] = useState(null);
             const [weekOffset, setWeekOffset] = useState(0); 
@@ -531,10 +528,9 @@
             const [historyStartDate, setHistoryStartDate] = useState(localISODate);
             const [historyEndDate, setHistoryEndDate] = useState(localISODate);
 
-            // New State for Follow-up Tab
-            const [followupTab, setFollowupTab] = useState('pending'); // 'pending', 'history', 'metrics'
-            const [followupHistorySearch, setFollowupHistorySearch] = useState(''); // Busca por setor no histórico de pendências
-            const [followupHistoryDate, setFollowupHistoryDate] = useState(''); // Busca por data no histórico de pendências
+            const [followupTab, setFollowupTab] = useState('pending');
+            const [followupHistorySearch, setFollowupHistorySearch] = useState('');
+            const [followupHistoryDate, setFollowupHistoryDate] = useState('');
 
             const [inspectionSearch, setInspectionSearch] = useState('');
             const [answers, setAnswers] = useState({});
@@ -673,7 +669,7 @@
 
                 currentQuestions.forEach(q => {
                     const resp = answers[q.id];
-                    if (resp) {
+                    if (resp && resp !== 'NA') {
                         const weight = q.weight || 1;
                         totalReal += weight;
                         if (resp === 'C') conformesReal += weight;
@@ -700,7 +696,6 @@
                             const resolution = resolutions.find(r => r.id === resolutionKey);
                             const question = questions.find(q => q.id === qId);
                             
-                            // Check Recurrence
                             const previousRecurrences = inspections.filter(i => 
                                 i.setor === insp.setor && 
                                 new Date(i.data) < new Date(insp.data) &&
@@ -719,7 +714,7 @@
                                 status: resolution ? resolution.status : 'PENDING',
                                 deadline: resolution ? resolution.deadline : '',
                                 actionNote: resolution ? resolution.actionNote : '',
-                                resolvedDate: resolution ? resolution.resolvedDate : '' // Nova propriedade
+                                resolvedDate: resolution ? resolution.resolvedDate : '' 
                             });
                         }
                     });
@@ -727,7 +722,6 @@
                 return issues.sort((a,b) => new Date(b.date) - new Date(a.date));
             }, [inspections, resolutions, questions]);
 
-            // Agrupamento por Setor para visualização e métricas
             const groupedIssues = useMemo(() => {
                 const pending = {};
                 const resolved = {};
@@ -745,23 +739,19 @@
                 return { pending, resolved };
             }, [allIssues]);
 
-            // Lógica de Filtro para o Histórico de Pendências Resolvidas
             const filteredResolvedIssues = useMemo(() => {
                 const source = groupedIssues.resolved;
                 const filtered = {};
 
-                if (!source) return {}; // Safety check
+                if (!source) return {}; 
 
                 Object.entries(source).forEach(([setor, issues]) => {
-                    // Filtra as issues pela data, se houver data selecionada
                     const issuesMatchingDate = followupHistoryDate 
                         ? issues.filter(i => i.date.startsWith(followupHistoryDate)) 
                         : issues;
 
-                    // Verifica se o setor corresponde à busca de texto
                     const sectorMatches = setor.toLowerCase().includes(followupHistorySearch.toLowerCase());
 
-                    // Se houver issues após filtro de data E o setor corresponder à busca, adiciona ao resultado
                     if (issuesMatchingDate.length > 0 && sectorMatches) {
                         filtered[setor] = issuesMatchingDate;
                     }
@@ -778,25 +768,20 @@
                     
                     if (issue.status === 'RESOLVED') {
                         stats[issue.setor].resolved++;
-                        
-                        // Cálculo de Eficiência com Penalidade por Atraso
-                        // Se tiver prazo E data de resolução E resolução foi depois do prazo = Atrasado
                         const isLate = issue.deadline && issue.resolvedDate && issue.resolvedDate > issue.deadline;
                         
                         if (isLate) {
                             stats[issue.setor].resolvedLate++;
-                            stats[issue.setor].points += 0.5; // Penalidade: Vale apenas 50%
+                            stats[issue.setor].points += 0.5; 
                         } else {
-                            stats[issue.setor].points += 1; // Vale 100%
+                            stats[issue.setor].points += 1; 
                         }
                     } 
-                    // Pendentes valem 0
                 });
                 
                 return Object.entries(stats).map(([setor, data]) => ({
                     setor,
                     ...data,
-                    // Eficiência baseada nos pontos acumulados vs total possível
                     efficiency: Math.round((data.points / data.total) * 100) || 0
                 })).sort((a, b) => b.efficiency - a.efficiency);
             }, [allIssues]);
@@ -804,7 +789,6 @@
             const handleUpdateResolution = async (issueId, updates) => {
                 const currentRes = resolutions.find(r => r.id === issueId) || { id: issueId };
                 
-                // Se estiver resolvendo, grava a data de hoje automaticamente
                 if (updates.status === 'RESOLVED') {
                     updates.resolvedDate = new Date().toISOString().split('T')[0];
                 }
@@ -942,7 +926,7 @@
                     };
 
                     await IDB.saveInspection(newInspection);
-                    await IDB.setConfig('current_draft', null); // Limpa o rascunho ao salvar com sucesso
+                    await IDB.setConfig('current_draft', null); 
 
                     if (editingInspectionId) {
                         setInspections(prev => prev.map(i => i.id === editingInspectionId ? newInspection : i));
@@ -972,7 +956,7 @@
 
             const handleCancelInspection = async () => {
                  if (confirm("Deseja cancelar esta inspeção? Todos os dados não salvos serão perdidos.")) {
-                     await IDB.setConfig('current_draft', null); // Limpa rascunho
+                     await IDB.setConfig('current_draft', null); 
                      setView('dashboard');
                  }
             };
@@ -1055,7 +1039,7 @@
             };
 
             // PDF Download Handler
-            const handleDownloadPDF = (elementId, filename, isLandscape = false) => { // Default portrait now
+            const handleDownloadPDF = (elementId, filename, isLandscape = false) => { 
                 const element = document.getElementById(elementId);
                 const opt = {
                     margin: 5,
@@ -1228,15 +1212,6 @@
 
                 return { avgScore, avgBonusScore, ranking, pieSector, pieCategory, pieAuditor, auditorPerformance, summaryText, filteredInspections };
             }, [inspections, questions, weekId, analyticsTab, selectedMonth, analyticsSelectedDate]);
-
-            // FILTER HISTORY
-            const filteredHistory = useMemo(() => {
-                return inspections.filter(insp => {
-                    const d = insp.data.split('T')[0];
-                    return d >= historyStartDate && d <= historyEndDate;
-                }).sort((a,b) => new Date(b.data) - new Date(a.data));
-            }, [inspections, historyStartDate, historyEndDate]);
-
 
             if (view === 'loading') return <div className="flex h-screen bg-stone-100 items-center justify-center flex-col gap-4"><div className="animate-spin rounded-full h-12 w-12 border-b-4 border-yellow-500"></div><p className="text-stone-500 font-bold animate-pulse">Carregando Sistema...</p></div>;
 
@@ -1624,45 +1599,20 @@
                                     </div>
                                 )}
                                 {settingsTab === 'history' && (
-                                    <div className="space-y-4">
-                                        {/* FILTRO DE DATA NO HISTÓRICO */}
-                                        <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-200">
-                                            <div className="flex gap-2 items-center">
-                                                <div className="flex-1">
-                                                    <label className="text-[10px] font-bold text-stone-500 uppercase">De</label>
-                                                    <input type="date" value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} className="w-full p-2 bg-stone-50 border rounded text-xs" />
+                                    <div className="space-y-3">
+                                        {inspections.sort((a,b) => new Date(b.data) - new Date(a.data)).map(insp => (
+                                            <div key={insp.id} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex justify-between items-center">
+                                                <div>
+                                                    <div className="font-bold">{insp.setor}</div>
+                                                    <div className="text-xs text-stone-500">{new Date(insp.data).toLocaleDateString()} • {insp.responsavel}</div>
                                                 </div>
-                                                <div className="flex-1">
-                                                    <label className="text-[10px] font-bold text-stone-500 uppercase">Até</label>
-                                                    <input type="date" value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} className="w-full p-2 bg-stone-50 border rounded text-xs" />
+                                                <div className="flex gap-2 items-center">
+                                                    <span className={`font-bold ${insp.score >= 85 ? 'text-green-600' : 'text-red-600'}`}>{insp.score}%</span>
+                                                    <button onClick={() => handleDeleteAudit(insp.id)} className="p-2 bg-stone-100 rounded text-red-500"><Icons.Trash /></button>
+                                                    <button onClick={() => { setReportInspection(insp); setView('report'); }} className="p-2 bg-stone-100 rounded text-stone-500"><Icons.FileText /></button>
                                                 </div>
                                             </div>
-                                        </div>
-
-                                        <div className="space-y-3">
-                                            {filteredHistory.length === 0 ? <p className="text-center text-stone-500 py-4 text-xs">Nenhum registro neste período.</p> : 
-                                            filteredHistory.map(insp => {
-                                                const displayScore = insp.bonusScore !== undefined ? insp.bonusScore : insp.score;
-                                                return (
-                                                <div key={insp.id} className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex justify-between items-center animate-fade-in">
-                                                    <div>
-                                                        <div className="font-bold">{insp.setor}</div>
-                                                        <div className="text-xs text-stone-500">{formatDateDisplay(insp.data.split('T')[0])} • {insp.responsavel}</div>
-                                                    </div>
-                                                    <div className="flex gap-2 items-center">
-                                                        <span className={`font-bold ${displayScore >= 85 ? 'text-green-600' : 'text-red-600'}`}>{displayScore}%</span>
-                                                        
-                                                        {/* ADD EDIT BUTTON HERE */}
-                                                        <button onClick={() => handleEditInspection(insp)} className="p-2 bg-stone-100 rounded text-stone-500" title="Editar">
-                                                            <Icons.Edit />
-                                                        </button> 
-
-                                                        <button onClick={() => handleDeleteAudit(insp.id)} className="p-2 bg-stone-100 rounded text-red-500"><Icons.Trash /></button>
-                                                        <button onClick={() => { setReportInspection(insp); setView('report'); }} className="p-2 bg-stone-100 rounded text-stone-500"><Icons.FileText /></button>
-                                                    </div>
-                                                </div>
-                                            )})}
-                                        </div>
+                                        ))}
                                     </div>
                                 )}
                             </main>
@@ -1683,31 +1633,23 @@
                                 <button onClick={() => setAnalyticsTab('monthly')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${analyticsTab === 'monthly' ? 'bg-yellow-500 text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}>Mensal</button>
                             </div>
 
-                            {analyticsTab === 'monthly' ? (
+                            {analyticsTab === 'monthly' && (
                                 <div className="px-6 pt-4">
                                     <label className="text-xs font-bold text-stone-500 uppercase flex items-center gap-2 mb-2"><Icons.Calendar /> Selecionar Mês</label>
                                     <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full p-2 bg-white border border-stone-300 rounded-lg text-stone-800 outline-none focus:border-yellow-500" />
-                                </div>
-                            ) : (
-                                <div className="px-6 pt-4">
-                                    <label className="text-xs font-bold text-stone-500 uppercase flex items-center gap-2 mb-2"><Icons.Calendar /> Selecionar Data de Referência</label>
-                                    <div className="flex flex-col gap-1">
-                                        <input type="date" value={analyticsSelectedDate} onChange={(e) => setAnalyticsSelectedDate(e.target.value)} className="w-full p-2 bg-white border border-stone-300 rounded-lg text-stone-800 outline-none focus:border-yellow-500" />
-                                        <p className="text-[10px] text-stone-500">Exibindo dados da semana de: <strong>{getWeekRangeFromDate(analyticsSelectedDate)}</strong></p>
-                                    </div>
                                 </div>
                             )}
 
                             <main className="flex-1 p-6 pb-24 space-y-8">
                                 <button onClick={() => setView('management_report')} className="w-full py-3 bg-yellow-500 text-white font-bold rounded-lg shadow-lg flex items-center justify-center gap-2 hover:bg-yellow-400 transition-all active:scale-95">
-                                    <Icons.FileText /> Gerar Relatório Semanal
+                                    <Icons.FileText /> Gerar Relatório Gerencial
                                 </button>
 
                                 <div className="bg-white rounded-xl p-6 border border-stone-200 text-center relative overflow-hidden shadow-sm">
                                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-400"></div>
-                                    <h3 className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">{analyticsTab === 'weekly' ? 'Média Semanal (Gratificação)' : 'Média Mensal (Gratificação)'}</h3>
+                                    <h3 className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">{analyticsTab === 'weekly' ? 'Média Semanal' : 'Média Mensal'}</h3>
                                     <div className="flex justify-center items-end gap-2">
-                                        <span className={`text-5xl font-black ${analytics.avgBonusScore >= 85 ? 'text-green-600' : analytics.avgBonusScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>{analytics.avgBonusScore}%</span>
+                                        <span className={`text-5xl font-black ${analytics.avgScore >= 85 ? 'text-green-600' : analytics.avgScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>{analytics.avgScore}%</span>
                                     </div>
                                     <p className="text-[10px] text-stone-400 mt-2">Baseado em {analytics.ranking.length} registros</p>
                                 </div>
@@ -1755,12 +1697,7 @@
                                                         <tr key={insp.setor} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
                                                             <td className="p-3 font-mono text-stone-400">{index + 1}</td>
                                                             <td className="p-3 font-medium">{insp.setor}</td>
-                                                            <td className={`p-3 text-right font-bold ${insp.score >= 85 ? 'text-green-600' : 'text-red-600'}`}>
-                                                                <div className="flex flex-col items-end">
-                                                                    <span>{insp.score}%</span>
-                                                                    <StarRating score={insp.score} />
-                                                                </div>
-                                                            </td>
+                                                            <td className={`p-3 text-right font-bold ${insp.score >= 85 ? 'text-green-600' : 'text-red-600'}`}>{insp.score}%</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
